@@ -1,6 +1,6 @@
 # ShelfLife
 
-ShelfLife is an intelligent library cataloguing tool that transforms minimal book input into rich, interconnected bibliographic data. Perfect for book collectors and personal library management.
+ShelfLife is an intelligent library cataloguing tool that transforms minimal book input into rich, interconnected bibliographic data. It was created in Cursor AI with the help of an agentic LLM tool, using the prompt in the ShelfLife-prompt.md file.
 
 ## Features
 
@@ -33,7 +33,7 @@ ShelfLife is an intelligent library cataloguing tool that transforms minimal boo
 - `constants.py` - Shared constants including genre lists, prompts, and taxonomies
 
 ### Static Assets
-- `static/styles.css` - Custom styling using Swiss Modern design principles
+- `static/styles.css`
   - Typography using Inter and Space Grotesk
   - Responsive layout with 1200px max width
   - Consistent spacing and visual hierarchy
