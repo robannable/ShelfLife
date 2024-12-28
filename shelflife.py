@@ -693,6 +693,46 @@ def visualize_book_network(G):
     
     return fig
 
+def ask_library_llm(query, library_data):
+    """Query the LLM about the library collection."""
+    prompt = f"""You are a knowledgeable librarian assistant. Use the provided library catalog to answer the following query.
+If the query cannot be answered using only the library information, clearly state that.
+
+Library Catalog:
+{json.dumps(library_data['library'], indent=2)}
+
+Query: {query}
+
+Please provide a clear, concise response based on the available library data."""
+
+    headers = {
+        "Authorization": f"Bearer {config.PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    
+    try:
+        response = requests.post(
+            config.PERPLEXITY_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            return response_data['choices'][0]['message']['content']
+        return None
+            
+    except Exception as e:
+        if config.DEBUG_MODE:
+            st.error(f"Error querying LLM: {str(e)}")
+        return None
+
 # Main application
 def main():
     # Set page configuration
@@ -748,7 +788,8 @@ def main():
         st.subheader("Navigation")
         page = st.selectbox(
             "Select Page",
-            ["Add Book", "View Collection", "Analytics", "Network View", "Executive Summary"]
+            ["Add Book", "View Collection", "Analytics", "Network View", 
+             "Executive Summary", "Ask the Library"]
         )
     
     if page == "Add Book":
@@ -1122,6 +1163,29 @@ def main():
     elif page == "Executive Summary":
         st.header("Library Executive Summary")
         
+        # Add statistics section at the top
+        stats, genre_counts, _ = generate_analytics(conn)
+        
+        # Display key metrics in columns
+        st.subheader("Quick Stats")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Books", stats['total_books'])
+        with col2:
+            st.metric("Unique Authors", stats['unique_authors'])
+        with col3:
+            st.metric("Average Year", 
+                     stats['avg_year'] if stats['avg_year'] is not None else "N/A")
+        with col4:
+            fiction_percentage = round(stats['fiction_ratio'] * 100)
+            nonfiction_percentage = round(stats['nonfiction_ratio'] * 100)
+            st.metric("Fiction/Non-Fiction", 
+                     f"{fiction_percentage}% / {nonfiction_percentage}%")
+        
+        st.divider()
+        
+        # Existing catalog and summary generation buttons
         col1, col2 = st.columns(2)
         
         with col1:
@@ -1183,6 +1247,37 @@ def main():
             
         except FileNotFoundError:
             st.info("No summary available. Generate one using the buttons above.")
+    
+    elif page == "Ask the Library":
+        st.header("Ask the Large Library Model")
+        
+        st.markdown("""
+        Ask questions about your library collection. For example:
+        - What themes are common in my collection?
+        - Which authors do I read most?
+        - What genres are underrepresented?
+        - Suggest books from my collection for a specific mood or topic
+        """)
+        
+        # Query input
+        query = st.text_area("Enter your question:", height=100)
+        
+        if st.button("Ask"):
+            try:
+                # Check for library catalog
+                with open("data/library_catalog.json", "r") as f:
+                    library_data = json.load(f)
+                
+                with st.spinner("Analyzing your library..."):
+                    response = ask_library_llm(query, library_data)
+                    if response:
+                        st.markdown("### Response")
+                        st.markdown(response, unsafe_allow_html=True)
+                    else:
+                        st.error("Failed to get a response")
+                        
+            except FileNotFoundError:
+                st.error("Library catalog not found. Please generate it first in the Executive Summary page.")
 
 if __name__ == "__main__":
     main() 
