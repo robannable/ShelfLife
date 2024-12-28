@@ -16,6 +16,7 @@ from typing import Optional
 from api_utils import fetch_book_metadata, test_api_connection
 import os
 from pathlib import Path
+from constants import STANDARD_GENRES, GENRE_PROMPT
 
 # Cache for API responses
 @lru_cache(maxsize=1000)
@@ -121,19 +122,22 @@ def enhance_book_data(title: str, author: str, year: Optional[int] = None, isbn:
             "Content-Type": "application/json"
         }
         
-        # Include metadata in the prompt
+        # Include metadata and genre constraints in the prompt
         enhanced_prompt = config.BOOK_ANALYSIS_PROMPT.format(
             title=title,
             author=author,
             year=year or metadata.get("year", "unknown")
         )
         
+        # Add genre selection prompt
+        genre_selection_prompt = GENRE_PROMPT.format(genres="\n".join(f"- {genre}" for genre in STANDARD_GENRES))
+        
         payload = {
             "model": "llama-3.1-sonar-large-128k-online",
             "messages": [
                 {
                     "role": "user",
-                    "content": enhanced_prompt
+                    "content": f"{enhanced_prompt}\n\nFor genre classification:\n{genre_selection_prompt}"
                 }
             ]
         }
