@@ -48,23 +48,96 @@ def test_api_connection(api_name: str) -> Dict[str, Any]:
             "error": str(e)
         }
 
-def fetch_book_metadata(title: str, author: str, isbn: Optional[str] = None) -> Dict[str, Any]:
-    """Fetch book metadata from multiple sources."""
+def fetch_book_metadata(title: str, author: str, isbn: Optional[str] = None) -> dict:
+    """Fetch book metadata from multiple sources, prioritizing ISBN when available."""
     metadata = {"sources": []}
-    
-    # Try Open Library first
-    ol_data = fetch_open_library_data(title, author, isbn)
-    if ol_data:
-        metadata.update(ol_data)
-        metadata["sources"].append("Open Library")
-    
-    # Try Google Books if needed
-    if not metadata.get("year") or not metadata.get("publisher"):
-        gb_data = fetch_google_books_data(title, author, isbn)
-        if gb_data:
-            metadata.update(gb_data)
-            metadata["sources"].append("Google Books")
-    
+
+    # Try ISBN-based lookup first if available
+    if isbn:
+        # Google Books ISBN search
+        try:
+            google_url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}&key={config.GOOGLE_BOOKS_API_KEY}"
+            response = requests.get(google_url)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('items'):
+                    book_info = data['items'][0]['volumeInfo']
+                    metadata.update({
+                        "title": book_info.get('title'),
+                        "author": book_info.get('authors', [author])[0],
+                        "year": int(book_info.get('publishedDate', '').split('-')[0]) if book_info.get('publishedDate') else None,
+                        "publisher": book_info.get('publisher'),
+                        "description": book_info.get('description'),
+                        "cover_url": book_info.get('imageLinks', {}).get('thumbnail'),
+                        "categories": book_info.get('categories', [])
+                    })
+                    metadata["sources"].append("Google Books (ISBN)")
+        except Exception as e:
+            if config.DEBUG_MODE:
+                st.error(f"Google Books ISBN API error: {str(e)}")
+
+        # Open Library ISBN search
+        try:
+            ol_url = f"https://openlibrary.org/api/books?bibkeys=ISBN:{isbn}&format=json&jscmd=data"
+            response = requests.get(ol_url)
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    book_info = data.get(f"ISBN:{isbn}", {})
+                    if book_info:
+                        metadata.update({
+                            "ol_subjects": book_info.get('subjects', []),
+                            "ol_cover_url": book_info.get('cover', {}).get('large'),
+                            "ol_publish_date": book_info.get('publish_date')
+                        })
+                        metadata["sources"].append("Open Library (ISBN)")
+        except Exception as e:
+            if config.DEBUG_MODE:
+                st.error(f"Open Library ISBN API error: {str(e)}")
+
+    # Fallback to title/author search if ISBN search failed or wasn't available
+    if "Google Books" not in metadata["sources"]:
+        try:
+            google_url = f"https://www.googleapis.com/books/v1/volumes?q=intitle:{title}+inauthor:{author}&key={config.GOOGLE_BOOKS_API_KEY}"
+            response = requests.get(google_url)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('items'):
+                    book_info = data['items'][0]['volumeInfo']
+                    metadata.update({
+                        "title": book_info.get('title'),
+                        "author": book_info.get('authors', [author])[0],
+                        "year": int(book_info.get('publishedDate', '').split('-')[0]) if book_info.get('publishedDate') else None,
+                        "publisher": book_info.get('publisher'),
+                        "description": book_info.get('description'),
+                        "cover_url": book_info.get('imageLinks', {}).get('thumbnail'),
+                        "categories": book_info.get('categories', [])
+                    })
+                    metadata["sources"].append("Google Books")
+        except Exception as e:
+            if config.DEBUG_MODE:
+                st.error(f"Google Books API error: {str(e)}")
+
+    if "Open Library" not in metadata["sources"]:
+        try:
+            ol_url = f"https://openlibrary.org/search.json?title={title}&author={author}"
+            response = requests.get(ol_url)
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('docs'):
+                    book_info = data['docs'][0]
+                    metadata.update({
+                        "ol_subjects": book_info.get('subject', []),
+                        "ol_first_publish_year": book_info.get('first_publish_year'),
+                        "ol_cover_id": book_info.get('cover_i')
+                    })
+                    if book_info.get('cover_i'):
+                        metadata["ol_cover_url"] = f"https://covers.openlibrary.org/b/id/{book_info['cover_i']}-L.jpg"
+                    metadata["sources"].append("Open Library")
+        except Exception as e:
+            if config.DEBUG_MODE:
+                st.error(f"Open Library API error: {str(e)}")
+
     return metadata
 
 def fetch_open_library_data(title: str, author: str, isbn: Optional[str] = None) -> Dict[str, Any]:

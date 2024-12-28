@@ -290,11 +290,44 @@ def main():
     # Initialize database
     conn = init_db()
     
-    # Sidebar navigation
-    page = st.sidebar.selectbox(
-        "Navigation",
-        ["Add Book", "View Collection", "Analytics", "Network View", "Executive Summary"]
-    )
+    with st.sidebar:
+        st.title("ShelfLife 📚")
+        
+        # API Status Section with manual check button
+        st.subheader("API Status")
+        if st.button("Check API Status"):
+            with st.spinner("Checking API connections..."):
+                # Check Perplexity API
+                perplexity_status = test_api_connection("perplexity")
+                st.write("Perplexity API:", 
+                        "✅" if perplexity_status["success"] else "❌")
+                
+                # Check Google Books API
+                google_status = test_api_connection("google_books")
+                st.write("Google Books API:", 
+                        "✅" if google_status["success"] else "❌")
+                
+                # Check Open Library API
+                ol_status = test_api_connection("open_library")
+                st.write("Open Library API:", 
+                        "✅" if ol_status["success"] else "❌")
+                
+                if config.DEBUG_MODE and not all(s["success"] for s in [perplexity_status, google_status, ol_status]):
+                    failed_apis = []
+                    if not perplexity_status["success"]:
+                        failed_apis.append(f"Perplexity: {perplexity_status['error']}")
+                    if not google_status["success"]:
+                        failed_apis.append(f"Google Books: {google_status['error']}")
+                    if not ol_status["success"]:
+                        failed_apis.append(f"Open Library: {ol_status['error']}")
+                    st.error("API Errors:\n" + "\n".join(failed_apis))
+        
+        # Navigation
+        st.subheader("Navigation")
+        page = st.selectbox(
+            "Select Page",
+            ["Add Book", "View Collection", "Analytics", "Network View", "Executive Summary"]
+        )
     
     if page == "Add Book":
         st.header("Add New Book")
@@ -610,18 +643,6 @@ def main():
                     st.write(summary_data['recommendations'])
                 else:
                     st.error("Unable to generate summary. Please try again later.")
-
-    if config.DEBUG_MODE:
-        st.sidebar.markdown("---")
-        st.sidebar.header("API Status")
-        
-        # Test API connections
-        for api in ["perplexity", "google_books", "open_library"]:
-            status = test_api_connection(api)
-            color = "🟢" if status["success"] else "🔴"
-            st.sidebar.write(f"{color} {api.replace('_', ' ').title()}")
-            if not status["success"] and status.get("error"):
-                st.sidebar.write(f"Error: {status['error']}")
 
 if __name__ == "__main__":
     main() 
