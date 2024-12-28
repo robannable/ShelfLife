@@ -466,9 +466,21 @@ def format_taxonomy_category(category):
 
 # Main application
 def main():
-    st.title("📚 ShelfLife")
+    # Set page configuration
+    st.set_page_config(
+        page_title="ShelfLife",
+        page_icon="📚",
+        layout="centered"
+    )
     
-    # Initialize database
+    # Load and inject CSS
+    def load_css(file_name):
+        with open(os.path.join('static', file_name)) as f:
+            st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+    
+    load_css('styles.css')
+    
+    # Initialize connection
     conn = init_db()
     
     with st.sidebar:
@@ -667,7 +679,7 @@ def main():
                 st.divider()
                 col3, col4, col5 = st.columns(3)
                 with col3:
-                    if st.button("🗑️ Delete", key=f"del_{book[0]}"):
+                    if st.button("🗑�� Delete", key=f"del_{book[0]}"):
                         c.execute('DELETE FROM books WHERE id = ?', (book[0],))
                         conn.commit()
                         st.rerun()

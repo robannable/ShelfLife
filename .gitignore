@@ -37,3 +37,6 @@ setup.cfg
 # Data files
 data/
 data/*.json 
+
+# Exclude compiled CSS
+static/*.css.map 
