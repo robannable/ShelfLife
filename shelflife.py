@@ -27,6 +27,23 @@ def process_image(uploaded_file):
     if uploaded_file is not None:
         try:
             image = Image.open(uploaded_file)
+            
+            # Get file extension from the uploaded file name
+            file_extension = uploaded_file.name.split('.')[-1].lower()
+            
+            # Map common image extensions to PIL format names
+            format_map = {
+                'jpg': 'JPEG',
+                'jpeg': 'JPEG',
+                'png': 'PNG',
+                'gif': 'GIF',
+                'bmp': 'BMP',
+                'webp': 'WEBP'
+            }
+            
+            # Use mapped format or default to JPEG
+            image_format = format_map.get(file_extension, 'JPEG')
+            
             # Resize if too large
             if max(image.size) > config.MAX_IMAGE_SIZE:
                 ratio = config.MAX_IMAGE_SIZE / max(image.size)
@@ -35,10 +52,14 @@ def process_image(uploaded_file):
             
             # Convert to bytes
             img_byte_arr = io.BytesIO()
-            image.save(img_byte_arr, format=image.format)
+            image.save(img_byte_arr, format=image_format)
             return img_byte_arr.getvalue()
+            
         except Exception as e:
-            st.error(f"Error processing image: {str(e)}")
+            if config.DEBUG_MODE:
+                st.error(f"Error processing image: {str(e)}\nFile type: {uploaded_file.type}")
+            else:
+                st.error("Error processing image. Please ensure it's a valid image file (JPG, PNG, GIF, BMP, or WebP)")
             return None
     return None
 
@@ -174,7 +195,15 @@ def generate_analytics(conn):
     stats = {}
     stats['total_books'] = c.execute('SELECT COUNT(*) FROM books').fetchone()[0]
     stats['unique_authors'] = c.execute('SELECT COUNT(DISTINCT author) FROM books').fetchone()[0]
-    stats['avg_year'] = c.execute('SELECT AVG(year) FROM books WHERE year IS NOT NULL').fetchone()[0]
+    
+    # Calculate average year excluding NULL values
+    avg_year_result = c.execute('''
+        SELECT AVG(CAST(year AS FLOAT))
+        FROM books 
+        WHERE year IS NOT NULL
+    ''').fetchone()[0]
+    
+    stats['avg_year'] = round(avg_year_result) if avg_year_result is not None else None
     
     # Genre distribution
     books_df = pd.read_sql_query('''
@@ -335,7 +364,12 @@ def main():
         with st.form("book_form"):
             title = st.text_input("Title*")
             author = st.text_input("Author*")
-            year = st.number_input("Year", min_value=0, max_value=datetime.now().year)
+            year = st.number_input("Year", 
+                min_value=0, 
+                max_value=datetime.now().year,
+                value=None)  # Changed to None default
+            # Convert 0 to None for database storage
+            year = year if year != 0 else None
             isbn = st.text_input("ISBN (optional)")
             publisher = st.text_input("Publisher (optional)")
             condition = st.selectbox("Condition", 
@@ -548,7 +582,8 @@ def main():
         col1, col2, col3 = st.columns(3)
         col1.metric("Total Books", stats['total_books'])
         col2.metric("Unique Authors", stats['unique_authors'])
-        col3.metric("Average Publication Year", int(stats['avg_year']) if stats['avg_year'] else 0)
+        col3.metric("Average Publication Year", 
+                    stats['avg_year'] if stats['avg_year'] is not None else "N/A")
         
         # Genre distribution
         if not genre_counts.empty:
