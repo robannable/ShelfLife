@@ -312,6 +312,82 @@ Please ensure your response is valid JSON and starts with {{ and ends with }}.""
             st.error(f"Error generating executive summary: {str(e)}")
         return None
 
+def find_related_books(conn, current_book_id, metadata):
+    """Find up to 3 related books based on shared themes."""
+    c = conn.cursor()
+    
+    # Get all other books
+    other_books = c.execute('''
+        SELECT id, title, author, metadata 
+        FROM books 
+        WHERE id != ?
+    ''', (current_book_id,)).fetchall()
+    
+    # Extract current book's themes
+    current_themes = set(metadata.get('themes', []))
+    
+    # Calculate theme overlap for each book
+    related_books = []
+    for book in other_books:
+        other_metadata = json.loads(book[3])
+        other_themes = set(other_metadata.get('themes', []))
+        shared_themes = current_themes & other_themes
+        
+        if shared_themes:  # Only include if there are shared themes
+            related_books.append({
+                'id': book[0],
+                'title': book[1],
+                'author': book[2],
+                'shared_themes': shared_themes,
+                'theme_count': len(shared_themes)
+            })
+    
+    # Sort by number of shared themes and return top 3
+    related_books.sort(key=lambda x: x['theme_count'], reverse=True)
+    return related_books[:3]
+
+def refresh_all_metadata(conn):
+    """Refresh metadata for all books in the collection."""
+    c = conn.cursor()
+    books = c.execute('SELECT id, title, author, year, isbn FROM books').fetchall()
+    total = len(books)
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    for i, book in enumerate(books):
+        try:
+            # Update progress
+            progress = (i + 1) / total
+            progress_bar.progress(progress)
+            status_text.text(f"Processing {i+1} of {total}: {book[1]}")
+            
+            # Get fresh metadata
+            enhanced_data = enhance_book_data(book[1], book[2], book[3], book[4])
+            
+            if enhanced_data:
+                c.execute('''
+                    UPDATE books 
+                    SET metadata = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                ''', (
+                    json.dumps(enhanced_data),
+                    datetime.now().isoformat(),
+                    book[0]
+                ))
+                conn.commit()
+                
+        except Exception as e:
+            if config.DEBUG_MODE:
+                st.error(f"Error updating {book[1]}: {str(e)}")
+            continue
+    
+    # Clear progress indicators
+    progress_bar.empty()
+    status_text.empty()
+    
+    return True
+
 # Main application
 def main():
     st.title("📚 ShelfLife")
@@ -495,24 +571,34 @@ def main():
                             """)
                             st.markdown("---")
                     
-                    # Keywords
+                    # Add Related Books section before keywords
+                    related_books = find_related_books(conn, book[0], metadata)
+                    if related_books:
+                        st.write("📚 **Related Books in Your Collection:**")
+                        for related in related_books:
+                            st.markdown(f"""
+                            - **{related['title']}** by {related['author']}  
+                              _Shared themes: {', '.join(related['shared_themes'])}_
+                            """)
+                    
+                    # Keywords (if present)
                     if metadata.get('keywords'):
                         st.write("🏷️ **Keywords:**")
                         st.write(", ".join(metadata['keywords']))
                 
-                # Edit/Delete/Refresh buttons
-                col5, col6, col7 = st.columns(3)
-                with col5:
-                    if st.button(f"Delete", key=f"del_{book[0]}"):
+                # Add action buttons at bottom of col1
+                st.divider()
+                col3, col4, col5 = st.columns(3)
+                with col3:
+                    if st.button("🗑️ Delete", key=f"del_{book[0]}"):
                         c.execute('DELETE FROM books WHERE id = ?', (book[0],))
                         conn.commit()
                         st.rerun()
-                with col6:
-                    if st.button(f"Edit", key=f"edit_{book[0]}"):
-                        # Store book ID in session state to show edit form
+                with col4:
+                    if st.button("✏️ Edit", key=f"edit_{book[0]}"):
                         st.session_state[f"edit_book_{book[0]}"] = True
-                with col7:
-                    if st.button(f"Refresh Metadata", key=f"refresh_{book[0]}"):
+                with col5:
+                    if st.button("🔄 Refresh", key=f"refresh_{book[0]}"):
                         with st.spinner("Updating book information..."):
                             enhanced_data = enhance_book_data(book[1], book[2], book[3], book[4])
                             if enhanced_data:
@@ -577,6 +663,7 @@ def main():
     elif page == "Analytics":
         st.header("Library Analytics")
         
+        # Existing analytics code
         stats, genre_counts, theme_counts = generate_analytics(conn)
         
         col1, col2, col3 = st.columns(3)
