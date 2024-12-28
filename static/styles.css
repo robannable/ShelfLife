@@ -1,87 +1,167 @@
+/* Typography */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap');
+
+/* Base styles */
+body {
+    font-family: 'Inter', sans-serif;
+    line-height: 1.6;
+    color: #F0F0F0;
+}
+
 /* Main container width control */
 .block-container {
-    max-width: 750px;
-    padding-top: 2rem;
-    padding-bottom: 2rem;
-    padding-left: 2rem;
-    padding-right: 2rem;
+    max-width: 1200px;
+    padding: 2rem;
     margin: 0 auto;
 }
 
 /* Ensure all content respects max width */
 .main .block-container {
-    max-width: 750px !important;
-    width: 750px !important;
+    max-width: 1200px !important;
+    width: 1200px !important;
 }
 
 /* Control width of all markdown content */
 .stMarkdown {
-    max-width: 750px !important;
+    max-width: 1200px !important;
     margin: 0 auto;
 }
 
-/* Control plotly charts and other wide elements */
-.element-container {
-    max-width: 750px !important;
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    margin-top: 1.5em;
+    margin-bottom: 0.75em;
+    color: rgb(49, 51, 63) !important;
+}
+
+h1 {
+    font-size: 2.5rem;
+    line-height: 1.2;
+}
+
+h2 {
+    font-size: 2rem;
+    line-height: 1.3;
+}
+
+h3 {
+    font-size: 1.5rem;
+    line-height: 1.4;
 }
 
 /* Metric containers */
 div.css-12w0qpk.e1tzin5v1 {
-    background-color: rgba(255, 255, 255, 0.1);
-    padding: 1rem;
-    border-radius: 5px;
+    background-color: rgba(255, 255, 255, 0.05);
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Expander styling */
 .streamlit-expander {
-    border: none;
-    background-color: rgba(255, 255, 255, 0.05);
-    width: 100%;
-    max-width: 750px !important;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    margin-bottom: 1rem;
 }
 
 /* Form elements */
 .stTextInput > div > div > input,
 .stTextArea > div > div > textarea {
-    width: 100%;
-    max-width: 750px !important;
-}
-
-/* Headers */
-h1, h2, h3 {
-    margin-top: 0.8em;
-    margin-bottom: 0.5em;
-    max-width: 750px !important;
-}
-
-/* Plots and visualizations */
-.js-plotly-plot {
-    max-width: 750px !important;
-}
-
-/* DataFrames and tables */
-.stDataFrame {
-    max-width: 750px !important;
-}
-
-/* Sidebar */
-.css-1d391kg {
-    width: 250px;
-}
-
-/* Ensure columns stay within width */
-.row-widget.stHorizontal {
-    max-width: 750px !important;
-    margin: 0 auto;
-}
-
-/* Improve readability of text elements */
-p, li {
-    font-size: 1rem;
-    line-height: 1.6;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    padding: 0.75rem;
+    font-family: 'Inter', sans-serif;
+    color: rgb(49, 51, 63) !important;
 }
 
 /* Better spacing for content sections */
-.stMarkdown > div > p {
-    margin-bottom: 1.5em;
+.stMarkdown > div > p,
+.stMarkdown > div > ul > li,
+.element-container > div > p,
+.element-container > div > ul > li {
+    color: rgb(49, 51, 63) !important;
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    line-height: 1.6;
+    margin-bottom: 0.5em;
+}
+
+/* Book information styling */
+.book-info {
+    padding: 1.5rem;
+    background-color: rgba(255, 255, 255, 0.02);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Sidebar refinements */
+.css-1d391kg {
+    width: 300px;
+    background-color: rgba(255, 255, 255, 0.02);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Button styling */
+.stButton > button {
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background-color: rgba(255, 255, 255, 0.05);
+    transition: all 0.2s ease;
+}
+
+.stButton > button:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Select box styling */
+.stSelectbox > div > div {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+}
+
+/* Expander header text */
+.streamlit-expander > div:first-child {
+    color: rgb(49, 51, 63) !important;
+    font-size: 1.4rem !important;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 500;
+}
+
+/* Book information text */
+.streamlit-expanderContent div {
+    color: rgb(49, 51, 63) !important;
+}
+
+/* List items in book details */
+.streamlit-expanderContent ul li {
+    color: rgb(49, 51, 63) !important;
+    margin-bottom: 0.25em;
+}
+
+/* Enhanced info sections spacing */
+.streamlit-expanderContent div > p {
+    margin-bottom: 1.2em !important;
+}
+
+/* Section headers in book info */
+.streamlit-expanderContent div strong {
+    display: block;
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 500;
+}
+
+/* First section header shouldn't have top margin */
+.streamlit-expanderContent div strong:first-child {
+    margin-top: 0;
 } 

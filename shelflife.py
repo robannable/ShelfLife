@@ -329,9 +329,9 @@ def generate_library_json(conn):
 
 def generate_executive_summary(library_data):
     """Generate summary using the library catalog."""
-    prompt = f"""Analyze this library collection and provide a JSON response with the following structure:
+    prompt = f"""You are a librarian experienced in curating eclectic book collections. Analyze this library collection and provide a JSON response with the following structure:
 {{
-    "summary": "A clear paragraph describing the collection's focus and character (200 words)",
+    "summary": "A clear paragraph describing the collection's focus and character (approx 200 words). Be abductive and reflect on your chain of thought.",
     "patterns": [
         "Key Pattern 1",
         "Key Pattern 2",
@@ -347,7 +347,7 @@ def generate_executive_summary(library_data):
 Books in collection:
 {json.dumps(library_data['library'], indent=2)}
 
-Ensure the response is valid JSON and maintains this exact structure."""
+Important: Ensure your response contains ONLY valid JSON. Do not include any additional text or formatting."""
 
     headers = {
         "Authorization": f"Bearer {config.PERPLEXITY_API_KEY}",
@@ -371,14 +371,26 @@ Ensure the response is valid JSON and maintains this exact structure."""
             response_data = response.json()
             content = response_data['choices'][0]['message']['content']
             
-            # Extract JSON content
+            # Clean the response content
+            # Remove any non-JSON text before and after
+            content = content.strip()
             start_idx = content.find('{')
             end_idx = content.rfind('}') + 1
+            
             if start_idx != -1 and end_idx != -1:
                 json_str = content[start_idx:end_idx]
-                return json.loads(json_str)
-        
-        return None
+                
+                # Remove any invalid control characters
+                json_str = ''.join(char for char in json_str if ord(char) >= 32 or char in '\n\r\t')
+                
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError as e:
+                    if config.DEBUG_MODE:
+                        st.error(f"JSON parsing error: {str(e)}\nContent: {json_str}")
+                    return None
+            
+            return None
             
     except Exception as e:
         if config.DEBUG_MODE:
@@ -876,87 +888,84 @@ def main():
                     
                     # Basic book information
                     st.write("**Basic Information**")
-                    st.write(f"📖 **Title:** {book[1]}")
-                    st.write(f"✍️ **Author:** {book[2]}")
-                    st.write(f"📅 **Year:** {book[3] if book[3] else 'Unknown'}")
-                    st.write(f"📚 **ISBN:** {book[4] if book[4] else 'N/A'}")
-                    st.write(f"🏢 **Publisher:** {book[5] if book[5] else 'Unknown'}")
-                    st.write(f"📊 **Condition:** {book[6]}")
-                    st.write(f"📝 **Added:** {book[9][:10]}")  # Show only date part
+                    st.write(f"**Title:** {book[1]}")
+                    st.write(f"**Author:** {book[2]}")
+                    st.write(f"**Year:** {book[3] if book[3] else 'Unknown'}")
+                    st.write(f"**ISBN:** {book[4] if book[4] else 'N/A'}")
+                    st.write(f"**Publisher:** {book[5] if book[5] else 'Unknown'}")
+                    st.write(f"**Condition:** {book[6]}")
+                    st.write(f"**Added:** {book[9][:10]}")  # Show only date part
                 
                 with col2:
                     metadata = json.loads(book[8])
                     
-                    # Enhanced information from APIs
-                    st.write("**Enhanced Information**")
-                    
-                    # Add Personal Notes section if they exist
+                    # Add Personal Notes section first if they exist
                     if book[11]:  # personal_notes column
-                        st.markdown("---")
-                        st.markdown("📝 **Personal Notes:**")
-                        st.markdown(f"_{book[11]}_")
-                        st.markdown("---")
+                        st.write("**Personal Notes:**")
+                        st.write(f"_{book[11]}_")
+                        st.write("")  # Add extra space after notes
                     
-                    # Sources used
-                    if "sources" in metadata:
-                        st.write("🔍 **Data Sources:**", ", ".join(metadata["sources"]))
+                    # Enhanced information from APIs
+                    st.write("**LLM Generated Information**")
                     
                     # Synopsis
-                    st.write("📝 **Synopsis:**")
+                    st.write("**Synopsis:**")
                     st.write(metadata.get('synopsis', 'No synopsis available'))
                     
-                    # Themes and Genre
                     if metadata.get('themes'):
-                        st.write("🎯 **Themes:**")
+                        st.write("**Themes:**")
                         for theme in metadata['themes']:
                             st.write(f"- {theme}")
                     
                     if metadata.get('genre'):
-                        st.write("📚 **Genre:**")
+                        st.write("**Genre:**")
                         for genre in metadata['genre']:
                             st.write(f"- {genre}")
                     
                     # Historical Context
                     if metadata.get('historical_context'):
-                        st.write("🏺 **Historical Context:**")
+                        st.write("**Historical Context:**")
                         st.write(metadata['historical_context'])
                     
                     # Reading Level and Time Period
                     col3, col4 = st.columns(2)
                     with col3:
                         if metadata.get('reading_level'):
-                            st.write("📖 **Reading Level:**")
+                            st.write("**Reading Level:**")
                             st.write(metadata['reading_level'])
                     with col4:
                         if metadata.get('time_period'):
-                            st.write("⌛ **Time Period:**")
+                            st.write("**Time Period:**")
                             st.write(metadata['time_period'])
                     
-                    # Add Related Books section after genre display
+                    # LLM Related Books suggestions
+                    if metadata.get('related_works'):
+                        st.write("**LLM Suggested Related Books:**")
+                        for work in metadata['related_works']:
+                            if isinstance(work, dict):
+                                # Handle structured JSON format
+                                st.write(f"- **{work.get('title', '')}** by {work.get('author', '')}")
+                                if work.get('reason'):
+                                    st.write(f"  _{work['reason']}_")
+                            else:
+                                # Handle simple string format
+                                st.write(f"- {work}")
+                    
+                    # Add Related Books from catalog
                     related_books = find_related_books(conn, book[0], metadata)
                     if related_books:
-                        st.markdown("---")  # Add visual separator
-                        st.write("📚 **Similar Books in Your Collection:**")
+                        st.write("**Similar Books in Your Collection:**")
                         for related in related_books:
-                            st.markdown(f"""
-                            - **{related['title']}** by {related['author']}  
-                              _Shared genres: {', '.join(related['shared_genres'])}_
-                            """)
-                        st.markdown("---")  # Add visual separator
-                    
-                    # Related Works from external sources
-                    if metadata.get('related_works'):
-                        st.write("🔗 **Related Works:**")
-                        for work in metadata['related_works']:
-                            st.markdown(f"""
-                            **{work['title']}** by {work['author']}  
-                            _{work.get('reason', 'No connection details available')}_
-                            """)
+                            st.write(f"- **{related['title']}** by {related['author']}")
                     
                     # Keywords (if present)
                     if metadata.get('keywords'):
-                        st.write("🏷️ **Keywords:**")
+                        st.write("**Keywords:**")
                         st.write(", ".join(metadata['keywords']))
+                    
+                    # Sources used (at end)
+                    if "sources" in metadata:
+                        st.write("**Data Sources:**", ", ".join(metadata["sources"]))
                 
                 # Add action buttons at bottom of col1
                 st.divider()

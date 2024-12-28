@@ -1,4 +1,4 @@
-# ShelfLife 📚
+# ShelfLife
 
 ShelfLife is an intelligent library cataloguing tool that transforms minimal book input into rich, interconnected bibliographic data. Perfect for book collectors and personal library management.
 
@@ -24,6 +24,34 @@ ShelfLife is an intelligent library cataloguing tool that transforms minimal boo
 - Edit and update functionality
 - Analytics dashboard
 
+## Project Structure
+
+### Core Files
+- `shelflife.py` - Main application file containing the Streamlit interface and core logic
+- `config.py` - Configuration file for API keys and application settings
+- `api_utils.py` - Utility functions for API interactions and data fetching
+- `constants.py` - Shared constants including genre lists, prompts, and taxonomies
+
+### Static Assets
+- `static/styles.css` - Custom styling using Swiss Modern design principles
+  - Typography using Inter and Space Grotesk
+  - Responsive layout with 1200px max width
+  - Consistent spacing and visual hierarchy
+  - Custom form and interactive element styling
+
+### Data Storage
+- `data/` - Directory for storing:
+  - SQLite database
+  - Generated JSON catalogs
+  - Executive summaries
+  - Cache files
+
+### Configuration Files
+- `.gitignore` - Specifies which files Git should ignore
+- `.gitattributes` - Git attributes for file handling
+- `requirements.txt` - Python package dependencies
+- `setup.sh` - Installation and setup script
+
 ## Installation
 
 1. Clone the repository
@@ -46,4 +74,16 @@ ShelfLife is an intelligent library cataloguing tool that transforms minimal boo
 - Uses SQLite for local database storage
 - Implements caching for API responses
 - Includes debug mode for API testing
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
 

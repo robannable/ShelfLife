@@ -15,7 +15,8 @@ data/*.sqlite3
 
 # Environment variables and secrets
 .env
-config.py
+config.py  # Ignore the actual config file
+!config.template.py  # But allow the template
 
 # IDE specific files
 .vscode/
