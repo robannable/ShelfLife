@@ -33,3 +33,7 @@ build/
 *.egg-info/
 .eggs/
 setup.cfg 
+
+# Data files
+data/
+data/*.json 

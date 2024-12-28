@@ -235,7 +235,7 @@ def generate_analytics(conn):
     return stats, genre_counts, theme_counts
 
 def generate_executive_summary(conn):
-    """Generate an executive summary and taxonomy of the entire collection."""
+    """Generate an executive summary with strictly formatted output."""
     c = conn.cursor()
     
     # Fetch all books with their metadata
@@ -244,29 +244,46 @@ def generate_executive_summary(conn):
     # Create a detailed prompt for Perplexity
     book_list = "\n".join([f"- {book[0]} by {book[1]}" for book in books])
     genres = set()
-    themes = set()
     
-    # Extract genres and themes from metadata
+    # Extract genres from metadata
     for book in books:
         metadata = json.loads(book[2])
         genres.update(metadata.get('genre', []))
-        themes.update(metadata.get('themes', []))
     
-    prompt = f"""Please analyze this library collection and provide a JSON response with the following structure:
+    prompt = f"""Analyze this library collection and provide a JSON response with the following structure:
 {{
-    "summary": "An executive summary of the collection's focus and character (200 words)",
-    "taxonomy": "A taxonomy of the major intellectual threads",
-    "patterns": "Notable patterns or gaps in the collection",
-    "recommendations": "Recommendations for future acquisitions"
+    "summary": "A clear paragraph describing the collection's focus and character (200 words)",
+    "taxonomy": {{
+        "categories": [
+            {{
+                "name": "Category Name",
+                "items": [
+                    {{
+                        "title": "Item Title",
+                        "description": "Brief description"
+                    }}
+                ]
+            }}
+        ]
+    }},
+    "patterns": [
+        "Pattern 1",
+        "Pattern 2",
+        "Pattern 3"
+    ],
+    "recommendations": [
+        "Recommendation 1",
+        "Recommendation 2",
+        "Recommendation 3"
+    ]
 }}
 
 Books in collection:
 {book_list}
 
 Primary genres: {', '.join(genres)}
-Primary themes: {', '.join(themes)}
 
-Please ensure your response is valid JSON and starts with {{ and ends with }}."""
+Ensure the response is valid JSON and maintains this exact structure."""
 
     # Make Perplexity API call
     headers = {
@@ -391,6 +408,61 @@ def refresh_all_metadata(conn):
     status_text.empty()
     
     return True
+
+def manage_executive_summary(conn, summary_data=None, refresh=False):
+    """Manage executive summary storage and retrieval."""
+    summary_path = "data/executive_summary.json"
+    os.makedirs("data", exist_ok=True)
+    
+    if refresh or summary_data:
+        # Save new summary data
+        summary_info = {
+            "last_updated": datetime.now().isoformat(),
+            "summary": summary_data
+        }
+        with open(summary_path, "w") as f:
+            json.dump(summary_info, f, indent=4)
+        return summary_data
+    
+    # Try to load existing summary
+    try:
+        if os.path.exists(summary_path):
+            with open(summary_path, "r") as f:
+                data = json.load(f)
+                return data["summary"]
+    except Exception as e:
+        if config.DEBUG_MODE:
+            st.error(f"Error loading executive summary: {str(e)}")
+    return None
+
+def format_taxonomy_category(category):
+    """Format a single taxonomy category as HTML."""
+    html = f"""
+    <div class="taxonomy-category" style="
+        margin-bottom: 20px;
+        background-color: rgba(255, 255, 255, 0.1);
+        padding: 20px;
+        border-radius: 5px;">
+        <h4 style="margin: 0 0 15px 0;">{category['name']}</h4>
+        <ul style="
+            list-style-type: circle;
+            margin: 0;
+            padding-left: 20px;">
+    """
+    
+    for item in category['items']:
+        html += f"""
+            <li style="margin-bottom: 10px;">
+                <strong>{item['title']}</strong>
+                {f": {item['description']}" if item.get('description') else ""}
+            </li>
+        """
+    
+    html += """
+        </ul>
+    </div>
+    """
+    return html
 
 # Main application
 def main():
@@ -748,28 +820,111 @@ def main():
     elif page == "Executive Summary":
         st.header("📊 Collection Executive Summary")
         
-        if st.button("Generate/Refresh Summary"):
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            refresh_summary = st.button("🔄 Refresh Summary")
+        
+        summary_data = manage_executive_summary(conn)
+        
+        if refresh_summary or summary_data is None:
             with st.spinner("Analyzing your collection..."):
-                summary_data = generate_executive_summary(conn)
-                
-                if summary_data:
-                    # Executive Summary
-                    st.subheader("📝 Executive Summary")
-                    st.write(summary_data['summary'])
-                    
-                    # Taxonomy
-                    st.subheader("🌳 Intellectual Taxonomy")
-                    st.write(summary_data['taxonomy'])
-                    
-                    # Patterns
-                    st.subheader("🔍 Collection Patterns")
-                    st.write(summary_data['patterns'])
-                    
-                    # Recommendations
-                    st.subheader("📚 Recommended Acquisitions")
-                    st.write(summary_data['recommendations'])
-                else:
-                    st.error("Unable to generate summary. Please try again later.")
+                new_summary = generate_executive_summary(conn)
+                if new_summary:
+                    summary_data = manage_executive_summary(conn, new_summary, refresh=True)
+                    st.success("Summary refreshed successfully!")
+        
+        if summary_data:
+            # Display last updated time with better formatting
+            if os.path.exists("data/executive_summary.json"):
+                with open("data/executive_summary.json", "r") as f:
+                    metadata = json.load(f)
+                    last_updated = datetime.fromisoformat(metadata["last_updated"])
+                    st.caption(f"_Last updated: {last_updated.strftime('%B %d, %Y at %I:%M %p')}_")
+            
+            # Quick Stats Section
+            st.markdown("### 📈 Collection Statistics")
+            st.markdown("---")
+            stats, genre_counts, theme_counts = generate_analytics(conn)
+            
+            # Display stats in columns
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Books", stats['total_books'])
+            with col2:
+                st.metric("Unique Authors", stats['unique_authors'])
+            with col3:
+                st.metric("Average Year", 
+                         stats['avg_year'] if stats['avg_year'] is not None else "N/A")
+            with col4:
+                top_genre = genre_counts.iloc[0] if not genre_counts.empty else None
+                st.metric("Top Genre", 
+                         f"{top_genre.name}" if top_genre is not None else "N/A",
+                         f"{top_genre['count']} books" if top_genre is not None else "")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Executive Summary
+            st.markdown("### 📝 Executive Summary")
+            st.markdown("---")
+            st.markdown(f"""
+            <div style="
+                background-color: rgba(255, 255, 255, 0.1);
+                padding: 20px;
+                border-radius: 5px;
+                margin-bottom: 20px;">
+                {summary_data['summary']}
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Taxonomy
+            st.markdown("### 🌳 Intellectual Taxonomy")
+            st.markdown("---")
+            taxonomy_html = "".join(
+                format_taxonomy_category(category)
+                for category in summary_data['taxonomy']['categories']
+            )
+            st.markdown(taxonomy_html, unsafe_allow_html=True)
+            
+            # Patterns
+            st.markdown("### 🔍 Collection Patterns")
+            st.markdown("---")
+            patterns_html = """
+            <div style="
+                background-color: rgba(255, 255, 255, 0.1);
+                padding: 20px;
+                border-radius: 5px;
+                margin-bottom: 20px;">
+                <ul style="
+                    list-style-type: circle;
+                    margin: 0;
+                    padding-left: 20px;">
+            """
+            for pattern in summary_data['patterns']:
+                patterns_html += f"<li style='margin-bottom: 10px;'>{pattern}</li>"
+            patterns_html += "</ul></div>"
+            st.markdown(patterns_html, unsafe_allow_html=True)
+            
+            # Recommendations
+            st.markdown("### 📚 Recommended Acquisitions")
+            st.markdown("---")
+            recommendations_html = """
+            <div style="
+                background-color: rgba(255, 255, 255, 0.1);
+                padding: 20px;
+                border-radius: 5px;
+                margin-bottom: 20px;">
+                <ul style="
+                    list-style-type: circle;
+                    margin: 0;
+                    padding-left: 20px;">
+            """
+            for rec in summary_data['recommendations']:
+                recommendations_html += f"<li style='margin-bottom: 10px;'>{rec}</li>"
+            recommendations_html += "</ul></div>"
+            st.markdown(recommendations_html, unsafe_allow_html=True)
+            
+        else:
+            st.info("No summary available yet. Click 'Refresh Summary' to generate one.")
 
 if __name__ == "__main__":
     main() 
