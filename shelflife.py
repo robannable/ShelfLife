@@ -313,7 +313,7 @@ Please ensure your response is valid JSON and starts with {{ and ends with }}.""
         return None
 
 def find_related_books(conn, current_book_id, metadata):
-    """Find up to 3 related books based on shared themes."""
+    """Find up to 3 related books based on shared genres."""
     c = conn.cursor()
     
     # Get all other books
@@ -323,27 +323,27 @@ def find_related_books(conn, current_book_id, metadata):
         WHERE id != ?
     ''', (current_book_id,)).fetchall()
     
-    # Extract current book's themes
-    current_themes = set(metadata.get('themes', []))
+    # Extract current book's genres
+    current_genres = set(metadata.get('genre', []))
     
-    # Calculate theme overlap for each book
+    # Calculate genre overlap for each book
     related_books = []
     for book in other_books:
         other_metadata = json.loads(book[3])
-        other_themes = set(other_metadata.get('themes', []))
-        shared_themes = current_themes & other_themes
+        other_genres = set(other_metadata.get('genre', []))
+        shared_genres = current_genres & other_genres
         
-        if shared_themes:  # Only include if there are shared themes
+        if shared_genres:  # Only include if there are shared genres
             related_books.append({
                 'id': book[0],
                 'title': book[1],
                 'author': book[2],
-                'shared_themes': shared_themes,
-                'theme_count': len(shared_themes)
+                'shared_genres': shared_genres,
+                'genre_count': len(shared_genres)
             })
     
-    # Sort by number of shared themes and return top 3
-    related_books.sort(key=lambda x: x['theme_count'], reverse=True)
+    # Sort by number of shared genres and return top 3
+    related_books.sort(key=lambda x: x['genre_count'], reverse=True)
     return related_books[:3]
 
 def refresh_all_metadata(conn):
@@ -561,24 +561,25 @@ def main():
                             st.write("⌛ **Time Period:**")
                             st.write(metadata['time_period'])
                     
-                    # Related Works
+                    # Add Related Books section after genre display
+                    related_books = find_related_books(conn, book[0], metadata)
+                    if related_books:
+                        st.markdown("---")  # Add visual separator
+                        st.write("📚 **Similar Books in Your Collection:**")
+                        for related in related_books:
+                            st.markdown(f"""
+                            - **{related['title']}** by {related['author']}  
+                              _Shared genres: {', '.join(related['shared_genres'])}_
+                            """)
+                        st.markdown("---")  # Add visual separator
+                    
+                    # Related Works from external sources
                     if metadata.get('related_works'):
                         st.write("🔗 **Related Works:**")
                         for work in metadata['related_works']:
                             st.markdown(f"""
                             **{work['title']}** by {work['author']}  
                             _{work.get('reason', 'No connection details available')}_
-                            """)
-                            st.markdown("---")
-                    
-                    # Add Related Books section before keywords
-                    related_books = find_related_books(conn, book[0], metadata)
-                    if related_books:
-                        st.write("📚 **Related Books in Your Collection:**")
-                        for related in related_books:
-                            st.markdown(f"""
-                            - **{related['title']}** by {related['author']}  
-                              _Shared themes: {', '.join(related['shared_themes'])}_
                             """)
                     
                     # Keywords (if present)
