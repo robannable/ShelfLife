@@ -201,6 +201,88 @@ def generate_analytics(conn):
     
     return stats, genre_counts, theme_counts
 
+def generate_executive_summary(conn):
+    """Generate an executive summary and taxonomy of the entire collection."""
+    c = conn.cursor()
+    
+    # Fetch all books with their metadata
+    books = c.execute('SELECT title, author, metadata FROM books').fetchall()
+    
+    # Create a detailed prompt for Perplexity
+    book_list = "\n".join([f"- {book[0]} by {book[1]}" for book in books])
+    genres = set()
+    themes = set()
+    
+    # Extract genres and themes from metadata
+    for book in books:
+        metadata = json.loads(book[2])
+        genres.update(metadata.get('genre', []))
+        themes.update(metadata.get('themes', []))
+    
+    prompt = f"""Please analyze this library collection and provide a JSON response with the following structure:
+{{
+    "summary": "An executive summary of the collection's focus and character (200 words)",
+    "taxonomy": "A taxonomy of the major intellectual threads",
+    "patterns": "Notable patterns or gaps in the collection",
+    "recommendations": "Recommendations for future acquisitions"
+}}
+
+Books in collection:
+{book_list}
+
+Primary genres: {', '.join(genres)}
+Primary themes: {', '.join(themes)}
+
+Please ensure your response is valid JSON and starts with {{ and ends with }}."""
+
+    # Make Perplexity API call
+    headers = {
+        "Authorization": f"Bearer {config.PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [{"role": "user", "content": prompt}]
+    }
+    
+    try:
+        response = requests.post(
+            config.PERPLEXITY_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            content = response_data['choices'][0]['message']['content']
+            
+            # Find JSON content between curly braces
+            try:
+                start_idx = content.find('{')
+                end_idx = content.rfind('}') + 1
+                if start_idx != -1 and end_idx != -1:
+                    json_str = content[start_idx:end_idx]
+                    return json.loads(json_str)
+                else:
+                    if config.DEBUG_MODE:
+                        st.error("Could not find valid JSON in response")
+                    return None
+            except json.JSONDecodeError as e:
+                if config.DEBUG_MODE:
+                    st.error(f"JSON parsing error: {str(e)}\nContent: {content}")
+                return None
+        else:
+            if config.DEBUG_MODE:
+                st.error(f"API Error: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        if config.DEBUG_MODE:
+            st.error(f"Error generating executive summary: {str(e)}")
+        return None
+
 # Main application
 def main():
     st.title("📚 ShelfLife")
@@ -211,7 +293,7 @@ def main():
     # Sidebar navigation
     page = st.sidebar.selectbox(
         "Navigation",
-        ["Add Book", "View Collection", "Analytics", "Network View"]
+        ["Add Book", "View Collection", "Analytics", "Network View", "Executive Summary"]
     )
     
     if page == "Add Book":
@@ -502,6 +584,32 @@ def main():
                      ))
         
         st.plotly_chart(fig)
+    
+    elif page == "Executive Summary":
+        st.header("📊 Collection Executive Summary")
+        
+        if st.button("Generate/Refresh Summary"):
+            with st.spinner("Analyzing your collection..."):
+                summary_data = generate_executive_summary(conn)
+                
+                if summary_data:
+                    # Executive Summary
+                    st.subheader("📝 Executive Summary")
+                    st.write(summary_data['summary'])
+                    
+                    # Taxonomy
+                    st.subheader("🌳 Intellectual Taxonomy")
+                    st.write(summary_data['taxonomy'])
+                    
+                    # Patterns
+                    st.subheader("🔍 Collection Patterns")
+                    st.write(summary_data['patterns'])
+                    
+                    # Recommendations
+                    st.subheader("📚 Recommended Acquisitions")
+                    st.write(summary_data['recommendations'])
+                else:
+                    st.error("Unable to generate summary. Please try again later.")
 
     if config.DEBUG_MODE:
         st.sidebar.markdown("---")
