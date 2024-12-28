@@ -307,42 +307,35 @@ def generate_analytics(conn):
     
     return stats, genre_counts, theme_counts
 
-def generate_executive_summary(conn):
-    """Generate an executive summary with strictly formatted output."""
+def generate_library_json(conn):
+    """Generate a simple JSON file with book titles and authors."""
     c = conn.cursor()
+    books = c.execute('SELECT title, author FROM books').fetchall()
     
-    # Fetch all books with their metadata
-    books = c.execute('SELECT title, author, metadata FROM books').fetchall()
+    library_data = {
+        "library": [
+            {"title": book[0], "author": book[1]} 
+            for book in books
+        ],
+        "generated_at": datetime.now().isoformat()
+    }
     
-    # Create a detailed prompt for Perplexity
-    book_list = "\n".join([f"- {book[0]} by {book[1]}" for book in books])
-    genres = set()
+    # Save to data folder
+    json_path = Path("data/library_catalog.json")
+    with open(json_path, "w") as f:
+        json.dump(library_data, f, indent=2)
     
-    # Extract genres from metadata
-    for book in books:
-        metadata = json.loads(book[2])
-        genres.update(metadata.get('genre', []))
-    
+    return json_path, library_data
+
+def generate_executive_summary(library_data):
+    """Generate summary using the library catalog."""
     prompt = f"""Analyze this library collection and provide a JSON response with the following structure:
 {{
     "summary": "A clear paragraph describing the collection's focus and character (200 words)",
-    "taxonomy": {{
-        "categories": [
-            {{
-                "name": "Category Name",
-                "items": [
-                    {{
-                        "title": "Item Title",
-                        "description": "Brief description"
-                    }}
-                ]
-            }}
-        ]
-    }},
     "patterns": [
-        "Pattern 1",
-        "Pattern 2",
-        "Pattern 3"
+        "Key Pattern 1",
+        "Key Pattern 2",
+        "Key Pattern 3"
     ],
     "recommendations": [
         "Recommendation 1",
@@ -352,13 +345,10 @@ def generate_executive_summary(conn):
 }}
 
 Books in collection:
-{book_list}
-
-Primary genres: {', '.join(genres)}
+{json.dumps(library_data['library'], indent=2)}
 
 Ensure the response is valid JSON and maintains this exact structure."""
 
-    # Make Perplexity API call
     headers = {
         "Authorization": f"Bearer {config.PERPLEXITY_API_KEY}",
         "Content-Type": "application/json"
@@ -381,25 +371,14 @@ Ensure the response is valid JSON and maintains this exact structure."""
             response_data = response.json()
             content = response_data['choices'][0]['message']['content']
             
-            # Find JSON content between curly braces
-            try:
-                start_idx = content.find('{')
-                end_idx = content.rfind('}') + 1
-                if start_idx != -1 and end_idx != -1:
-                    json_str = content[start_idx:end_idx]
-                    return json.loads(json_str)
-                else:
-                    if config.DEBUG_MODE:
-                        st.error("Could not find valid JSON in response")
-                    return None
-            except json.JSONDecodeError as e:
-                if config.DEBUG_MODE:
-                    st.error(f"JSON parsing error: {str(e)}\nContent: {content}")
-                return None
-        else:
-            if config.DEBUG_MODE:
-                st.error(f"API Error: {response.status_code}")
-            return None
+            # Extract JSON content
+            start_idx = content.find('{')
+            end_idx = content.rfind('}') + 1
+            if start_idx != -1 and end_idx != -1:
+                json_str = content[start_idx:end_idx]
+                return json.loads(json_str)
+        
+        return None
             
     except Exception as e:
         if config.DEBUG_MODE:
@@ -942,7 +921,7 @@ def main():
                 st.divider()
                 col3, col4, col5 = st.columns(3)
                 with col3:
-                    if st.button("🗑�� Delete", key=f"del_{book[0]}"):
+                    if st.button("🗑 Delete", key=f"del_{book[0]}"):
                         c.execute('DELETE FROM books WHERE id = ?', (book[0],))
                         conn.commit()
                         st.rerun()
@@ -1141,113 +1120,69 @@ def main():
                 st.info("Add more books to see their relationships!")
     
     elif page == "Executive Summary":
-        st.header("📊 Collection Executive Summary")
+        st.header("Library Executive Summary")
         
-        col1, col2 = st.columns([1, 3])
+        col1, col2 = st.columns(2)
+        
         with col1:
-            refresh_summary = st.button("�� Refresh Summary")
+            if st.button("Generate Library Catalog"):
+                with st.spinner("Generating catalog..."):
+                    json_path, library_data = generate_library_json(conn)
+                    st.success("Library catalog generated!")
+                    
+                    # Offer download
+                    with open(json_path, "r") as f:
+                        st.download_button(
+                            "Download Library Catalog",
+                            f.read(),
+                            "library_catalog.json",
+                            "application/json"
+                        )
         
-        summary_data = manage_executive_summary(conn)
+        with col2:
+            if st.button("Generate Summary"):
+                try:
+                    # Load existing catalog
+                    with open("data/library_catalog.json", "r") as f:
+                        library_data = json.load(f)
+                    
+                    with st.spinner("Generating summary..."):
+                        summary = generate_executive_summary(library_data)
+                        if summary:
+                            # Store the summary
+                            summary_info = {
+                                "last_updated": datetime.now().isoformat(),
+                                "summary": summary
+                            }
+                            with open("data/executive_summary.json", "w") as f:
+                                json.dump(summary_info, f, indent=2)
+                            
+                            st.success("Summary generated!")
+                        else:
+                            st.error("Failed to generate summary")
+                except FileNotFoundError:
+                    st.error("Please generate library catalog first")
         
-        if refresh_summary or summary_data is None:
-            with st.spinner("Analyzing your collection..."):
-                new_summary = generate_executive_summary(conn)
-                if new_summary:
-                    summary_data = manage_executive_summary(conn, new_summary, refresh=True)
-                    st.success("Summary refreshed successfully!")
-        
-        if summary_data:
-            # Display last updated time with better formatting
-            if os.path.exists("data/executive_summary.json"):
-                with open("data/executive_summary.json", "r") as f:
-                    metadata = json.load(f)
-                    last_updated = datetime.fromisoformat(metadata["last_updated"])
-                    st.caption(f"_Last updated: {last_updated.strftime('%B %d, %Y at %I:%M %p')}_")
+        # Display existing summary if available
+        try:
+            with open("data/executive_summary.json", "r") as f:
+                summary_data = json.load(f)
+                
+            st.subheader("Collection Summary")
+            st.write(summary_data["summary"]["summary"])
             
-            # Quick Stats Section
-            st.markdown("### 📈 Collection Statistics")
-            st.markdown("---")
-            stats, genre_counts, theme_counts = generate_analytics(conn)
+            st.subheader("Key Patterns")
+            for pattern in summary_data["summary"]["patterns"]:
+                st.write(f"• {pattern}")
             
-            # Display stats in columns
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total Books", stats['total_books'])
-            with col2:
-                st.metric("Unique Authors", stats['unique_authors'])
-            with col3:
-                st.metric("Average Year", 
-                         stats['avg_year'] if stats['avg_year'] is not None else "N/A")
-            with col4:
-                top_genre = genre_counts.iloc[0] if not genre_counts.empty else None
-                st.metric("Top Genre", 
-                         f"{top_genre.name}" if top_genre is not None else "N/A",
-                         f"{top_genre['count']} books" if top_genre is not None else "")
+            st.subheader("Recommendations")
+            for rec in summary_data["summary"]["recommendations"]:
+                st.write(f"• {rec}")
             
-            st.markdown("<br>", unsafe_allow_html=True)
+            st.caption(f"Last updated: {summary_data['last_updated']}")
             
-            # Executive Summary
-            st.markdown("### 📝 Executive Summary")
-            st.markdown("---")
-            st.markdown(f"""
-            <div style="
-                background-color: rgba(255, 255, 255, 0.1);
-                padding: 20px;
-                border-radius: 5px;
-                margin-bottom: 20px;">
-                {summary_data['summary']}
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Taxonomy
-            st.markdown("### 🌳 Intellectual Taxonomy")
-            st.markdown("---")
-            taxonomy_html = "".join(
-                format_taxonomy_category(category)
-                for category in summary_data['taxonomy']['categories']
-            )
-            st.markdown(taxonomy_html, unsafe_allow_html=True)
-            
-            # Patterns
-            st.markdown("### 🔍 Collection Patterns")
-            st.markdown("---")
-            patterns_html = """
-            <div style="
-                background-color: rgba(255, 255, 255, 0.1);
-                padding: 20px;
-                border-radius: 5px;
-                margin-bottom: 20px;">
-                <ul style="
-                    list-style-type: circle;
-                    margin: 0;
-                    padding-left: 20px;">
-            """
-            for pattern in summary_data['patterns']:
-                patterns_html += f"<li style='margin-bottom: 10px;'>{pattern}</li>"
-            patterns_html += "</ul></div>"
-            st.markdown(patterns_html, unsafe_allow_html=True)
-            
-            # Recommendations
-            st.markdown("### 📚 Recommended Acquisitions")
-            st.markdown("---")
-            recommendations_html = """
-            <div style="
-                background-color: rgba(255, 255, 255, 0.1);
-                padding: 20px;
-                border-radius: 5px;
-                margin-bottom: 20px;">
-                <ul style="
-                    list-style-type: circle;
-                    margin: 0;
-                    padding-left: 20px;">
-            """
-            for rec in summary_data['recommendations']:
-                recommendations_html += f"<li style='margin-bottom: 10px;'>{rec}</li>"
-            recommendations_html += "</ul></div>"
-            st.markdown(recommendations_html, unsafe_allow_html=True)
-            
-        else:
-            st.info("No summary available yet. Click 'Refresh Summary' to generate one.")
+        except FileNotFoundError:
+            st.info("No summary available. Generate one using the buttons above.")
 
 if __name__ == "__main__":
     main() 
