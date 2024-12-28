@@ -41,3 +41,4 @@ data/*.json
 
 # Exclude compiled CSS
 static/*.css.map 
+config.py
