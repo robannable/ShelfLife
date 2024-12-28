@@ -1,5 +1,4 @@
 # Python virtual environment
-shelflife-env/
 venv/
 env/
 
@@ -8,9 +7,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Database
+# Database files
 *.db
 *.sqlite3
+data/*.db
+data/*.sqlite3
 
 # Environment variables and secrets
 .env
@@ -26,10 +27,9 @@ config.py
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-
 # Distribution / packaging
 dist/
 build/
-*.egg-info/ 
+*.egg-info/
+.eggs/
+setup.cfg 

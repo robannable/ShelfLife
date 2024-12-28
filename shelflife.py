@@ -14,6 +14,8 @@ from functools import lru_cache
 import hashlib
 from typing import Optional
 from api_utils import fetch_book_metadata, test_api_connection
+import os
+from pathlib import Path
 
 # Cache for API responses
 @lru_cache(maxsize=1000)
@@ -42,7 +44,14 @@ def process_image(uploaded_file):
 
 # Enhanced database initialization
 def init_db():
-    conn = sqlite3.connect(config.DB_PATH)
+    # Create data directory if it doesn't exist
+    data_dir = Path(os.path.dirname(os.path.abspath(__file__))) / 'data'
+    data_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create database path
+    db_path = data_dir / 'database.db'
+    
+    conn = sqlite3.connect(str(db_path))
     c = conn.cursor()
     
     # Add indices for better performance
