@@ -16,7 +16,8 @@ from typing import Optional
 from api_utils import fetch_book_metadata, test_api_connection
 import os
 from pathlib import Path
-from constants import STANDARD_GENRES, GENRE_PROMPT
+from constants import STANDARD_GENRES, GENRE_PROMPT, GENRE_CATEGORIES
+from math import sqrt
 
 # Cache for API responses
 @lru_cache(maxsize=1000)
@@ -76,26 +77,60 @@ def init_db():
     conn = sqlite3.connect(str(db_path))
     c = conn.cursor()
     
-    # Add indices for better performance
-    c.executescript('''
-        CREATE TABLE IF NOT EXISTS books (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            author TEXT NOT NULL,
-            year INTEGER,
-            isbn TEXT,
-            publisher TEXT,
-            condition TEXT,
-            cover_image BLOB,
-            metadata JSON,
-            created_at TIMESTAMP,
-            updated_at TIMESTAMP
-        );
-        
-        CREATE INDEX IF NOT EXISTS idx_title ON books(title);
-        CREATE INDEX IF NOT EXISTS idx_author ON books(author);
-        CREATE INDEX IF NOT EXISTS idx_year ON books(year);
+    # Create version table to track schema changes
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
     ''')
+    
+    # Get current schema version
+    current_version = c.execute('SELECT MAX(version) FROM schema_version').fetchone()[0] or 0
+    
+    # Define schema updates
+    schema_updates = {
+        1: '''
+            CREATE TABLE IF NOT EXISTS books (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                author TEXT NOT NULL,
+                year INTEGER,
+                isbn TEXT,
+                publisher TEXT,
+                condition TEXT,
+                cover_image BLOB,
+                metadata JSON,
+                created_at TIMESTAMP,
+                updated_at TIMESTAMP
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_title ON books(title);
+            CREATE INDEX IF NOT EXISTS idx_author ON books(author);
+            CREATE INDEX IF NOT EXISTS idx_year ON books(year);
+        ''',
+        2: '''
+            ALTER TABLE books ADD COLUMN personal_notes TEXT;
+        '''
+        # Add future schema versions here as needed
+        # 3: 'ALTER TABLE books ADD COLUMN new_column_name TEXT;'
+    }
+    
+    # Apply any missing updates in order
+    for version, update_sql in schema_updates.items():
+        if version > current_version:
+            try:
+                c.executescript(update_sql)
+                c.execute('INSERT INTO schema_version (version) VALUES (?)', (version,))
+                conn.commit()
+                if config.DEBUG_MODE:
+                    st.write(f"Applied database schema update version {version}")
+            except sqlite3.OperationalError as e:
+                if config.DEBUG_MODE:
+                    st.error(f"Error applying schema update {version}: {str(e)}")
+                # Continue with other updates even if one fails
+                continue
+    
     conn.commit()
     return conn
 
@@ -209,28 +244,66 @@ def generate_analytics(conn):
     
     stats['avg_year'] = round(avg_year_result) if avg_year_result is not None else None
     
-    # Genre distribution
+    # Genre distribution with fiction/non-fiction categorization
     books_df = pd.read_sql_query('''
         SELECT metadata FROM books WHERE metadata IS NOT NULL
     ''', conn)
     
-    genres = []
+    # Initialize categorized genres
+    fiction_genres = []
+    nonfiction_genres = []
     themes = []
+    
+    # Fiction and Non-Fiction genre lists
+    FICTION_GENRES = {
+        'Fantasy', 'Science Fiction', 'Mystery', 'Romance', 'Horror', 
+        'Literary Fiction', 'Historical Fiction', 'Adventure', 'Thriller',
+        'Young Adult', 'Children\'s Literature', 'Contemporary Fiction'
+    }
+    
+    NONFICTION_GENRES = {
+        'Biography', 'History', 'Science', 'Philosophy', 'Self-Help',
+        'Business', 'Technology', 'Politics', 'Psychology', 'Art',
+        'Travel', 'Cooking', 'Religion', 'Education', 'Reference'
+    }
+    
     for _, row in books_df.iterrows():
         metadata = json.loads(row['metadata'])
         if 'genre' in metadata:
-            genres.extend(metadata['genre'])
+            for genre in metadata['genre']:
+                if genre in FICTION_GENRES:
+                    fiction_genres.append(genre)
+                elif genre in NONFICTION_GENRES:
+                    nonfiction_genres.append(genre)
         if 'themes' in metadata:
             themes.extend(metadata['themes'])
     
-    # Create proper DataFrames for visualization
-    genre_df = pd.DataFrame(genres, columns=['genre'])
-    genre_counts = genre_df['genre'].value_counts().reset_index()
-    genre_counts.columns = ['genre', 'count']
+    # Create DataFrames for visualization
+    fiction_df = pd.DataFrame(fiction_genres, columns=['genre'])
+    fiction_counts = fiction_df['genre'].value_counts().reset_index()
+    fiction_counts.columns = ['genre', 'count']
+    fiction_counts['category'] = 'Fiction'
+    
+    nonfiction_df = pd.DataFrame(nonfiction_genres, columns=['genre'])
+    nonfiction_counts = nonfiction_df['genre'].value_counts().reset_index()
+    nonfiction_counts.columns = ['genre', 'count']
+    nonfiction_counts['category'] = 'Non-Fiction'
+    
+    # Combine fiction and non-fiction counts
+    genre_counts = pd.concat([fiction_counts, nonfiction_counts])
     
     theme_df = pd.DataFrame(themes, columns=['theme'])
     theme_counts = theme_df['theme'].value_counts().reset_index()
     theme_counts.columns = ['theme', 'count']
+    
+    # Calculate fiction vs non-fiction ratio
+    total_categorized = len(fiction_genres) + len(nonfiction_genres)
+    if total_categorized > 0:
+        stats['fiction_ratio'] = len(fiction_genres) / total_categorized
+        stats['nonfiction_ratio'] = len(nonfiction_genres) / total_categorized
+    else:
+        stats['fiction_ratio'] = 0
+        stats['nonfiction_ratio'] = 0
     
     return stats, genre_counts, theme_counts
 
@@ -464,6 +537,183 @@ def format_taxonomy_category(category):
     """
     return html
 
+def create_book_network(conn):
+    """Create a network visualization of book relationships."""
+    G = nx.Graph()
+    c = conn.cursor()
+    books = c.execute('SELECT id, title, author, metadata FROM books').fetchall()
+    
+    # Create nodes and track metadata for each book
+    book_metadata = {}
+    for book in books:
+        book_id, title, author, metadata_json = book
+        metadata = json.loads(metadata_json)
+        display_name = f"{title}\n{author}"
+        G.add_node(display_name)
+        
+        # Extract year and convert to decade
+        year = metadata.get('year')
+        decade = f"{str(year)[:-1]}0s" if year else None
+        
+        # Simplify metadata storage
+        book_metadata[display_name] = {
+            'genres': set(metadata.get('genre', [])),
+            'is_fiction': any(g in GENRE_CATEGORIES['Fiction'] for g in metadata.get('genre', [])),
+            'decade': decade,
+            'author': author
+        }
+    
+    # Calculate relationships
+    for book1 in book_metadata:
+        for book2 in book_metadata:
+            if book1 >= book2:  # Skip duplicate pairs
+                continue
+                
+            # Calculate relationship strength
+            shared_genres = len(book_metadata[book1]['genres'] & 
+                             book_metadata[book2]['genres'])
+            same_fiction_type = (book_metadata[book1]['is_fiction'] == 
+                               book_metadata[book2]['is_fiction'])
+            same_decade = (book_metadata[book1]['decade'] == 
+                         book_metadata[book2]['decade'] and 
+                         book_metadata[book1]['decade'] is not None)
+            
+            # Only create edge if there's a meaningful relationship
+            score = (shared_genres * 3 +  # Weight shared genres heavily
+                    same_fiction_type * 2 +
+                    same_decade * 2)
+            
+            if score >= 3:  # Minimum threshold for connection
+                G.add_edge(book1, book2, 
+                          weight=score,
+                          relationship={
+                              'shared_genres': shared_genres,
+                              'same_type': same_fiction_type,
+                              'same_decade': same_decade
+                          })
+    
+    return G
+
+def visualize_book_network(G):
+    """Create an interactive network visualization."""
+    if len(G.nodes()) == 0:
+        return None
+    
+    # Define connection colors
+    COLORS = {
+        'genre': 'rgba(65, 105, 225, 0.8)',  # Royal Blue
+        'decade': 'rgba(50, 205, 50, 0.8)',  # Lime Green
+        'category': 'rgba(255, 140, 0, 0.8)'  # Dark Orange
+    }
+    
+    # Calculate node sizes based on connections
+    node_degrees = dict(G.degree())
+    node_sizes = {node: (degree + 1) * 10 for node, degree in node_degrees.items()}
+    
+    # Create layout
+    pos = nx.spring_layout(G, k=1/sqrt(len(G.nodes())), iterations=50)
+    
+    # Create separate edge traces for each connection type
+    edge_traces = []
+    
+    for connection_type, color in COLORS.items():
+        edge_x = []
+        edge_y = []
+        edge_text = []
+        
+        for edge in G.edges():
+            relationship = G.edges[edge]['relationship']
+            should_include = False
+            
+            if connection_type == 'genre' and relationship['shared_genres'] > 0:
+                should_include = True
+            elif connection_type == 'decade' and relationship['same_decade']:
+                should_include = True
+            elif connection_type == 'category' and relationship['same_type']:
+                should_include = True
+                
+            if should_include:
+                x0, y0 = pos[edge[0]]
+                x1, y1 = pos[edge[1]]
+                edge_x.extend([x0, x1, None])
+                edge_y.extend([y0, y1, None])
+                
+                hover_text = f"""
+                Connection Type: {connection_type.title()}
+                Shared Genres: {relationship['shared_genres']}
+                Same Type: {'Yes' if relationship['same_type'] else 'No'}
+                Same Decade: {'Yes' if relationship['same_decade'] else 'No'}
+                """
+                edge_text.extend([hover_text, hover_text, None])
+        
+        edge_trace = go.Scatter(
+            x=edge_x, y=edge_y,
+            line=dict(width=1, color=color),
+            hoverinfo='text',
+            text=edge_text,
+            mode='lines',
+            name=connection_type.title(),
+            showlegend=True
+        )
+        edge_traces.append(edge_trace)
+    
+    # Create node trace
+    node_x = []
+    node_y = []
+    node_text = []
+    node_size = []
+    
+    for node in G.nodes():
+        x, y = pos[node]
+        node_x.append(x)
+        node_y.append(y)
+        node_text.append(node)
+        node_size.append(node_sizes[node])
+    
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode='markers+text',
+        hoverinfo='text',
+        text=node_text,
+        textposition="bottom center",
+        marker=dict(
+            size=node_size,
+            color='rgba(200, 200, 200, 0.8)',
+            line=dict(width=1, color='rgba(50, 50, 50, 0.8)')
+        ),
+        name='Books'
+    )
+    
+    # Create figure with legend
+    fig = go.Figure(
+        data=[*edge_traces, node_trace],
+        layout=go.Layout(
+            title='Book Relationship Network',
+            showlegend=True,
+            hovermode='closest',
+            margin=dict(b=20,l=5,r=5,t=40),
+            legend=dict(
+                yanchor="top",
+                y=0.99,
+                xanchor="left",
+                x=0.01,
+                bgcolor="rgba(255, 255, 255, 0.1)"
+            ),
+            annotations=[
+                dict(
+                    text="Larger nodes = more connections",
+                    showarrow=False,
+                    xref="paper", yref="paper",
+                    x=0, y=-0.1
+                )
+            ],
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+        )
+    )
+    
+    return fig
+
 # Main application
 def main():
     # Set page configuration
@@ -531,14 +781,20 @@ def main():
             year = st.number_input("Year", 
                 min_value=0, 
                 max_value=datetime.now().year,
-                value=None)  # Changed to None default
-            # Convert 0 to None for database storage
+                value=None)
             year = year if year != 0 else None
             isbn = st.text_input("ISBN (optional)")
             publisher = st.text_input("Publisher (optional)")
             condition = st.selectbox("Condition", 
                 ["New", "Like New", "Very Good", "Good", "Fair", "Poor"])
             cover_image = st.file_uploader("Cover Image", type=['png', 'jpg', 'jpeg'])
+            
+            # Add personal notes section
+            personal_notes = st.text_area(
+                "Personal Notes",
+                placeholder="Add your personal thoughts, reading status, annotations, or any other notes about this book...",
+                help="These notes are private and won't be used in analytics or summaries"
+            )
             
             submitted = st.form_submit_button("Add Book")
             
@@ -553,13 +809,13 @@ def main():
                     c.execute('''
                         INSERT INTO books (
                             title, author, year, isbn, publisher, 
-                            condition, cover_image, metadata, created_at
+                            condition, cover_image, metadata, personal_notes, created_at
                         )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         title, author, year, isbn, publisher,
                         condition, image_data, json.dumps(enhanced_data),
-                        datetime.now().isoformat()
+                        personal_notes, datetime.now().isoformat()
                     ))
                     conn.commit()
                     st.success("Book added successfully!")
@@ -613,6 +869,13 @@ def main():
                     
                     # Enhanced information from APIs
                     st.write("**Enhanced Information**")
+                    
+                    # Add Personal Notes section if they exist
+                    if book[11]:  # personal_notes column
+                        st.markdown("---")
+                        st.markdown("📝 **Personal Notes:**")
+                        st.markdown(f"_{book[11]}_")
+                        st.markdown("---")
                     
                     # Sources used
                     if "sources" in metadata:
@@ -720,6 +983,14 @@ def main():
                             index=["New", "Like New", "Very Good", "Good", "Fair", "Poor"].index(book[6]) if book[6] else 0)
                         new_cover = st.file_uploader("New Cover Image (optional)", type=['png', 'jpg', 'jpeg'])
                         
+                        # Add personal notes to edit form
+                        new_personal_notes = st.text_area(
+                            "Personal Notes",
+                            value=book[11] if book[11] else "",
+                            placeholder="Add your personal thoughts, reading status, annotations, or any other notes about this book...",
+                            help="These notes are private and won't be used in analytics or summaries"
+                        )
+                        
                         col8, col9 = st.columns(2)
                         with col8:
                             if st.form_submit_button("Save Changes"):
@@ -752,89 +1023,129 @@ def main():
     elif page == "Analytics":
         st.header("Library Analytics")
         
-        # Existing analytics code
+        # Get analytics data
         stats, genre_counts, theme_counts = generate_analytics(conn)
         
-        col1, col2, col3 = st.columns(3)
+        # Basic metrics
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Books", stats['total_books'])
         col2.metric("Unique Authors", stats['unique_authors'])
-        col3.metric("Average Publication Year", 
-                    stats['avg_year'] if stats['avg_year'] is not None else "N/A")
+        col3.metric("Average Year", 
+                   stats['avg_year'] if stats['avg_year'] is not None else "N/A")
         
-        # Genre distribution
+        # Fiction vs Non-Fiction ratio
+        fiction_percentage = round(stats['fiction_ratio'] * 100)
+        nonfiction_percentage = round(stats['nonfiction_ratio'] * 100)
+        col4.metric("Fiction/Non-Fiction", 
+                   f"{fiction_percentage}% / {nonfiction_percentage}%")
+        
+        # Genre distribution with separate Fiction and Non-Fiction sections
         if not genre_counts.empty:
-            fig_genre = px.pie(genre_counts, values='count', names='genre', title='Genre Distribution')
-            st.plotly_chart(fig_genre)
+            st.subheader("Genre Distribution")
+            
+            # Create tabs for different views
+            tab1, tab2, tab3 = st.tabs(["Combined View", "Fiction", "Non-Fiction"])
+            
+            with tab1:
+                # Sunburst chart for all genres
+                fig = px.sunburst(
+                    genre_counts,
+                    path=['category', 'genre'],
+                    values='count',
+                    title='All Genres'
+                )
+                st.plotly_chart(fig)
+            
+            with tab2:
+                # Fiction genres
+                fiction_data = genre_counts[genre_counts['category'] == 'Fiction']
+                if not fiction_data.empty:
+                    fig_fiction = px.pie(
+                        fiction_data,
+                        values='count',
+                        names='genre',
+                        title='Fiction Genres'
+                    )
+                    st.plotly_chart(fig_fiction)
+                else:
+                    st.info("No fiction books in your collection yet.")
+            
+            with tab3:
+                # Non-fiction genres
+                nonfiction_data = genre_counts[genre_counts['category'] == 'Non-Fiction']
+                if not nonfiction_data.empty:
+                    fig_nonfiction = px.pie(
+                        nonfiction_data,
+                        values='count',
+                        names='genre',
+                        title='Non-Fiction Genres'
+                    )
+                    st.plotly_chart(fig_nonfiction)
+                else:
+                    st.info("No non-fiction books in your collection yet.")
         
         # Theme distribution
         if not theme_counts.empty:
-            fig_themes = px.treemap(theme_counts, path=['theme'], values='count', title='Theme Distribution')
+            st.subheader("Theme Distribution")
+            fig_themes = px.treemap(
+                theme_counts,
+                path=['theme'],
+                values='count',
+                title='Themes Across Your Collection'
+            )
             st.plotly_chart(fig_themes)
     
     elif page == "Network View":
-        st.header("Book Network")
+        st.header("Book Relationship Network")
         
-        # Create network graph
-        G = nx.Graph()
-        c = conn.cursor()
-        books = c.execute('SELECT id, title, metadata FROM books').fetchall()
+        # Add description
+        st.markdown("""
+        This network visualization shows relationships between books in your collection.
         
-        # Add nodes and edges based on shared themes/genres
-        for book in books:
-            G.add_node(book[1])  # Add book title as node
-            metadata = json.loads(book[2])
-            themes = metadata.get('themes', [])
+        **Relationship Factors:**
+        - 🎭 Shared Genres (weighted heavily)
+        - 📖 Fiction/Non-Fiction Category
+        - 📅 Same Decade
+        
+        **How to Read:**
+        - Larger nodes indicate books with more connections
+        - Darker colors indicate stronger relationships
+        - Hover over nodes to see book details
+        - Hover over lines to see relationship details
+        
+        *Books are connected when they share multiple relationship factors*
+        """)
+        
+        # Create and display network
+        with st.spinner("Generating network visualization..."):
+            G = create_book_network(conn)
+            fig = visualize_book_network(G)
             
-            # Connect books with shared themes
-            for other_book in books:
-                if book[0] != other_book[0]:  # Don't connect to self
-                    other_metadata = json.loads(other_book[2])
-                    other_themes = other_metadata.get('themes', [])
-                    shared_themes = set(themes) & set(other_themes)
-                    
-                    if shared_themes:
-                        G.add_edge(book[1], other_book[1], 
-                                 weight=len(shared_themes))
-        
-        # Create network visualization using plotly
-        pos = nx.spring_layout(G)
-        edge_trace = go.Scatter(
-            x=[], y=[], mode='lines',
-            line=dict(width=0.5, color='#888'),
-            hoverinfo='none'
-        )
-        
-        node_trace = go.Scatter(
-            x=[], y=[], mode='markers+text',
-            text=[],
-            textposition="bottom center",
-            hoverinfo='text',
-            marker=dict(size=20)
-        )
-        
-        for node in G.nodes():
-            x, y = pos[node]
-            node_trace['x'] += tuple([x])
-            node_trace['y'] += tuple([y])
-            node_trace['text'] += tuple([node])
-        
-        fig = go.Figure(data=[edge_trace, node_trace],
-                     layout=go.Layout(
-                         showlegend=False,
-                         hovermode='closest',
-                         margin=dict(b=0,l=0,r=0,t=0),
-                         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
-                     ))
-        
-        st.plotly_chart(fig)
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Add statistics
+                st.subheader("Network Statistics")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Connections", len(G.edges()))
+                with col2:
+                    if len(G.nodes()) > 0:
+                        density = nx.density(G)
+                        st.metric("Network Density", f"{density:.2%}")
+                with col3:
+                    if len(G.nodes()) > 0:
+                        avg_connections = sum(dict(G.degree()).values()) / len(G.nodes())
+                        st.metric("Avg. Connections", f"{avg_connections:.1f}")
+            else:
+                st.info("Add more books to see their relationships!")
     
     elif page == "Executive Summary":
         st.header("📊 Collection Executive Summary")
         
         col1, col2 = st.columns([1, 3])
         with col1:
-            refresh_summary = st.button("🔄 Refresh Summary")
+            refresh_summary = st.button("�� Refresh Summary")
         
         summary_data = manage_executive_summary(conn)
         

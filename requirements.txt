@@ -1,2 +1,27 @@
 # Core dependencies
-python-dotenv>=1.0.0 
+streamlit
+python-dotenv
+
+# Database
+sqlite3
+
+# Data processing
+pandas
+numpy
+
+# API interactions
+requests
+
+# Image processing
+Pillow
+
+# Visualization
+plotly
+networkx
+
+# Development tools
+black
+pytest
+
+# Optional: Performance improvements
+streamlit-cache-data 

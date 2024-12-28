@@ -15,5 +15,11 @@ python -m pip install --upgrade pip
 # Install dependencies
 pip install -e .
 
+# Install requirements
+pip install -r requirements.txt
+
+# Run the Streamlit app
+streamlit run shelflife.py
+
 echo "Setup complete! Virtual environment is activated."
 echo "To deactivate, run: deactivate" 
