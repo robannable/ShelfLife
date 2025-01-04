@@ -882,9 +882,26 @@ def main():
                 with col1:
                     # Display cover image
                     if book[7]:  # Local cover image
-                        st.image(book[7], caption="Cover Image")
-                    elif 'cover_url' in json.loads(book[8]):  # API-fetched cover
-                        st.image(json.loads(book[8])['cover_url'], caption="Cover Image")
+                        try:
+                            st.image(book[7], caption="Cover Image")
+                        except Exception as e:
+                            if config.DEBUG_MODE:
+                                st.error(f"Error displaying local cover image: {str(e)}")
+                            st.info("Cover image not available")
+                    elif book[8]:  # Check if metadata exists
+                        try:
+                            metadata = json.loads(book[8])
+                            if 'cover_url' in metadata and metadata['cover_url']:
+                                try:
+                                    st.image(metadata['cover_url'], caption="Cover Image")
+                                except Exception as e:
+                                    if config.DEBUG_MODE:
+                                        st.error(f"Error displaying cover from URL: {str(e)}")
+                                    st.info("Cover image not available")
+                        except json.JSONDecodeError as e:
+                            if config.DEBUG_MODE:
+                                st.error(f"Error parsing metadata: {str(e)}")
+                            st.info("Cover image not available")
                     
                     # Basic book information
                     st.write("**Basic Information**")

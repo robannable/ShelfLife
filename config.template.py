@@ -79,4 +79,9 @@ API_TEST_ENDPOINTS = {
         "method": "GET",
         "params": {"q": "test"}
     }
-} 
+}
+
+# Add these constants
+OPEN_LIBRARY_COVERS_URL = "https://covers.openlibrary.org/b"
+GOOGLE_BOOKS_MAX_RESULTS = 1
+GOOGLE_BOOKS_FIELDS = "items(volumeInfo(title,authors,publishedDate,description,imageLinks,categories,pageCount,language))" 

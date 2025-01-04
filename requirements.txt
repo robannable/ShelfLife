@@ -2,9 +2,6 @@
 streamlit
 python-dotenv
 
-# Database
-sqlite3
-
 # Data processing
 pandas
 numpy
@@ -21,7 +18,4 @@ networkx
 
 # Development tools
 black
-pytest
-
-# Optional: Performance improvements
-streamlit-cache-data 
+pytest 
