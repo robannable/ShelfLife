@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 from constants import STANDARD_GENRES, GENRE_PROMPT, GENRE_CATEGORIES
 from math import sqrt
+import re
 
 # Cache for API responses
 @lru_cache(maxsize=1000)
@@ -528,8 +529,13 @@ def format_taxonomy_category(category):
     """
     return html
 
-def create_book_network(conn):
-    """Create a network visualization of book relationships."""
+def create_book_network(conn, category=None):
+    """Create a network visualization of book relationships.
+    
+    Args:
+        conn: Database connection
+        category: Optional filter for 'Fiction' or 'Non-Fiction'
+    """
     G = nx.Graph()
     c = conn.cursor()
     books = c.execute('SELECT id, title, author, metadata FROM books').fetchall()
@@ -539,6 +545,13 @@ def create_book_network(conn):
     for book in books:
         book_id, title, author, metadata_json = book
         metadata = json.loads(metadata_json)
+        
+        # Skip books that don't match the category filter
+        if category:
+            is_fiction = any(g in GENRE_CATEGORIES['Fiction'] for g in metadata.get('genre', []))
+            if (category == 'Fiction' and not is_fiction) or (category == 'Non-Fiction' and is_fiction):
+                continue
+        
         display_name = f"{title}\n{author}"
         G.add_node(display_name)
         
@@ -546,12 +559,13 @@ def create_book_network(conn):
         year = metadata.get('year')
         decade = f"{str(year)[:-1]}0s" if year else None
         
-        # Simplify metadata storage
+        # Extract themes
+        themes = set(metadata.get('themes', []))
+        
         book_metadata[display_name] = {
-            'genres': set(metadata.get('genre', [])),
-            'is_fiction': any(g in GENRE_CATEGORIES['Fiction'] for g in metadata.get('genre', [])),
+            'author': author,
             'decade': decade,
-            'author': author
+            'themes': themes
         }
     
     # Calculate relationships
@@ -559,50 +573,57 @@ def create_book_network(conn):
         for book2 in book_metadata:
             if book1 >= book2:  # Skip duplicate pairs
                 continue
-                
-            # Calculate relationship strength
-            shared_genres = len(book_metadata[book1]['genres'] & 
-                             book_metadata[book2]['genres'])
-            same_fiction_type = (book_metadata[book1]['is_fiction'] == 
-                               book_metadata[book2]['is_fiction'])
-            same_decade = (book_metadata[book1]['decade'] == 
-                         book_metadata[book2]['decade'] and 
-                         book_metadata[book1]['decade'] is not None)
             
-            # Only create edge if there's a meaningful relationship
-            score = (shared_genres * 3 +  # Weight shared genres heavily
-                    same_fiction_type * 2 +
-                    same_decade * 2)
+            # Calculate relationship scores
+            same_author = book_metadata[book1]['author'] == book_metadata[book2]['author']
+            same_decade = (book_metadata[book1]['decade'] == book_metadata[book2]['decade'] 
+                         and book_metadata[book1]['decade'] is not None)
+            shared_themes = len(book_metadata[book1]['themes'] & 
+                             book_metadata[book2]['themes'])
             
-            if score >= 3:  # Minimum threshold for connection
+            # Weight the relationships
+            score = (
+                same_author * 5 +  # Heavy weight for same author
+                same_decade * 3 +  # Medium weight for same decade
+                shared_themes * 2  # Weight per shared theme
+            )
+            
+            if score > 0:  # Only create edges with relationships
                 G.add_edge(book1, book2, 
                           weight=score,
                           relationship={
-                              'shared_genres': shared_genres,
-                              'same_type': same_fiction_type,
-                              'same_decade': same_decade
+                              'same_author': same_author,
+                              'same_decade': same_decade,
+                              'shared_themes': shared_themes
                           })
     
     return G
 
 def visualize_book_network(G):
-    """Create an interactive network visualization."""
+    """Create an interactive network visualization with improved legibility."""
     if len(G.nodes()) == 0:
         return None
     
     # Define connection colors
     COLORS = {
-        'genre': 'rgba(65, 105, 225, 0.8)',  # Royal Blue
-        'decade': 'rgba(50, 205, 50, 0.8)',  # Lime Green
-        'category': 'rgba(255, 140, 0, 0.8)'  # Dark Orange
+        'author': 'rgba(65, 105, 225, 0.8)',   # Royal Blue
+        'decade': 'rgba(50, 205, 50, 0.8)',    # Lime Green
+        'theme': 'rgba(255, 140, 0, 0.8)'      # Dark Orange
     }
     
-    # Calculate node sizes based on connections
-    node_degrees = dict(G.degree())
-    node_sizes = {node: (degree + 1) * 10 for node, degree in node_degrees.items()}
+    # Calculate node sizes based on weighted connections
+    node_weights = {node: 0 for node in G.nodes()}
+    for u, v, data in G.edges(data=True):
+        weight = data['weight']
+        node_weights[u] += weight
+        node_weights[v] += weight
     
-    # Create layout
-    pos = nx.spring_layout(G, k=1/sqrt(len(G.nodes())), iterations=50)
+    # Scale node sizes
+    max_weight = max(node_weights.values()) if node_weights else 1
+    node_sizes = {node: 20 + (weight / max_weight) * 40 for node, weight in node_weights.items()}
+    
+    # Create layout with more spacing
+    pos = nx.spring_layout(G, k=2/sqrt(len(G.nodes())), iterations=50)
     
     # Create separate edge traces for each connection type
     edge_traces = []
@@ -616,11 +637,11 @@ def visualize_book_network(G):
             relationship = G.edges[edge]['relationship']
             should_include = False
             
-            if connection_type == 'genre' and relationship['shared_genres'] > 0:
+            if connection_type == 'author' and relationship['same_author']:
                 should_include = True
             elif connection_type == 'decade' and relationship['same_decade']:
                 should_include = True
-            elif connection_type == 'category' and relationship['same_type']:
+            elif connection_type == 'theme' and relationship['shared_themes'] > 0:
                 should_include = True
                 
             if should_include:
@@ -629,17 +650,19 @@ def visualize_book_network(G):
                 edge_x.extend([x0, x1, None])
                 edge_y.extend([y0, y1, None])
                 
-                hover_text = f"""
-                Connection Type: {connection_type.title()}
-                Shared Genres: {relationship['shared_genres']}
-                Same Type: {'Yes' if relationship['same_type'] else 'No'}
-                Same Decade: {'Yes' if relationship['same_decade'] else 'No'}
-                """
+                # Enhanced hover text
+                hover_text = "<br>".join([
+                    f"Connection: {connection_type.title()}",
+                    f"Books:",
+                    f"- {edge[0].split('<br>')[0]}",
+                    f"- {edge[1].split('<br>')[0]}",
+                    f"Shared Themes: {relationship['shared_themes']}" if relationship['shared_themes'] > 0 else ""
+                ])
                 edge_text.extend([hover_text, hover_text, None])
         
         edge_trace = go.Scatter(
             x=edge_x, y=edge_y,
-            line=dict(width=1, color=color),
+            line=dict(width=1.5, color=color),
             hoverinfo='text',
             text=edge_text,
             mode='lines',
@@ -648,7 +671,7 @@ def visualize_book_network(G):
         )
         edge_traces.append(edge_trace)
     
-    # Create node trace
+    # Create node trace with improved labels
     node_x = []
     node_y = []
     node_text = []
@@ -658,7 +681,10 @@ def visualize_book_network(G):
         x, y = pos[node]
         node_x.append(x)
         node_y.append(y)
-        node_text.append(node)
+        
+        # Format node text for better readability
+        title, author = node.split('\n')
+        node_text.append(f"{title}<br>by {author}")
         node_size.append(node_sizes[node])
     
     node_trace = go.Scatter(
@@ -669,13 +695,13 @@ def visualize_book_network(G):
         textposition="bottom center",
         marker=dict(
             size=node_size,
-            color='rgba(200, 200, 200, 0.8)',
+            color='rgba(200, 200, 200, 0.9)',
             line=dict(width=1, color='rgba(50, 50, 50, 0.8)')
         ),
         name='Books'
     )
     
-    # Create figure with legend
+    # Create figure with improved layout
     fig = go.Figure(
         data=[*edge_traces, node_trace],
         layout=go.Layout(
@@ -683,6 +709,8 @@ def visualize_book_network(G):
             showlegend=True,
             hovermode='closest',
             margin=dict(b=20,l=5,r=5,t=40),
+            plot_bgcolor='rgba(0,0,0,0.1)',
+            paper_bgcolor='rgba(0,0,0,0)',
             legend=dict(
                 yanchor="top",
                 y=0.99,
@@ -692,7 +720,7 @@ def visualize_book_network(G):
             ),
             annotations=[
                 dict(
-                    text="Larger nodes = more connections",
+                    text="Node size indicates number of connections",
                     showarrow=False,
                     xref="paper", yref="paper",
                     x=0, y=-0.1
@@ -744,6 +772,319 @@ Please provide a clear, concise response based on the available library data."""
         if config.DEBUG_MODE:
             st.error(f"Error querying LLM: {str(e)}")
         return None
+
+def extract_and_save_themes(conn) -> dict:
+    """Extract all themes from the library and save to JSON."""
+    c = conn.cursor()
+    books = c.execute('SELECT metadata FROM books WHERE metadata IS NOT NULL').fetchall()
+    
+    # Collect unique themes
+    unique_themes = set()
+    for book in books:
+        metadata = json.loads(book[0])
+        themes = metadata.get('themes', [])
+        unique_themes.update(themes)
+    
+    # Create simplified theme data structure
+    theme_data = {
+        "themes": sorted(list(unique_themes)),  # Just a simple sorted list of themes
+        "generated_at": datetime.now().isoformat(),
+        "total_themes": len(unique_themes)
+    }
+    
+    # Save to data folder
+    os.makedirs("data", exist_ok=True)
+    with open("data/theme_inventory.json", "w") as f:
+        json.dump(theme_data, f, indent=2)
+    
+    return theme_data
+
+def analyze_theme_groupings(theme_data: dict) -> dict:
+    """Use LLM to analyze and group themes."""
+    # Split themes into chunks if there are too many
+    MAX_THEMES_PER_CHUNK = 20
+    all_themes = theme_data['themes']
+    
+    if len(all_themes) > MAX_THEMES_PER_CHUNK:
+        # Process themes in chunks and combine results
+        combined_analysis = {
+            "uber_themes": [],
+            "analysis": {
+                "summary": "",
+                "key_insights": []
+            }
+        }
+        
+        # Process themes in chunks
+        chunk_summaries = []
+        chunk_insights = []
+        
+        # Process themes in chunks
+        for i in range(0, len(all_themes), MAX_THEMES_PER_CHUNK):
+            chunk = all_themes[i:i + MAX_THEMES_PER_CHUNK]
+            chunk_data = {"themes": chunk}
+            
+            # Analyze this chunk
+            chunk_analysis = analyze_theme_chunk(chunk_data)
+            if chunk_analysis:
+                # Collect uber-themes
+                combined_analysis["uber_themes"].extend(chunk_analysis["uber_themes"])
+                
+                # Collect summaries and insights for later combination
+                if "analysis" in chunk_analysis:
+                    if "summary" in chunk_analysis["analysis"]:
+                        chunk_summaries.append(chunk_analysis["analysis"]["summary"])
+                    if "key_insights" in chunk_analysis["analysis"]:
+                        chunk_insights.extend(chunk_analysis["analysis"]["key_insights"])
+        
+        # Combine summaries and insights
+        if chunk_summaries:
+            # Create a combined summary prompt
+            summary_prompt = f"""Synthesize these theme analysis summaries into a single concise 200-word summary:
+
+{' '.join(chunk_summaries)}"""
+            
+            # Use LLM to create combined summary
+            combined_summary = get_combined_summary(summary_prompt)
+            combined_analysis["analysis"]["summary"] = combined_summary or "Analysis summary not available."
+        
+        # Add unique insights
+        if chunk_insights:
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_insights = []
+            for insight in chunk_insights:
+                if insight not in seen:
+                    seen.add(insight)
+                    unique_insights.append(insight)
+            combined_analysis["analysis"]["key_insights"] = unique_insights[:5]  # Limit to top 5 insights
+        
+        # Save the combined analysis
+        with open("data/theme_analysis.json", "w") as f:
+            json.dump(combined_analysis, f, indent=2)
+        
+        return combined_analysis
+    else:
+        # Process all themes at once if the list is small enough
+        return analyze_theme_chunk(theme_data)
+
+def get_combined_summary(prompt: str) -> str:
+    """Use LLM to combine multiple summaries into one."""
+    headers = {
+        "Authorization": f"Bearer {config.PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    # Use llama-3.1-70b-instruct model for more sophisticated theme analysis
+    payload = {
+        "model": "llama-3.1-70b-instruct",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a literary analyst synthesizing thematic analyses. Provide concise, insightful summaries without citations or references. Focus on patterns and relationships between themes."
+            },
+            {
+                "role": "user",
+                "content": prompt + "\n\nProvide a concise synthesis without citations or references. Focus on the relationships and patterns between themes."
+            }
+        ]
+    }
+    
+    try:
+        response = requests.post(
+            config.PERPLEXITY_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=45  # Increased timeout for larger model
+        )
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            # Clean any remaining citations or references from the response
+            content = response_data['choices'][0]['message']['content'].strip()
+            # Remove citation patterns like [1], [2], etc.
+            content = re.sub(r'\[\d+\]', '', content)
+            return content
+        return None
+        
+    except Exception as e:
+        if config.DEBUG_MODE:
+            st.error(f"Error combining summaries: {str(e)}")
+        return None
+
+def analyze_theme_chunk(theme_data: dict) -> dict:
+    """Analyze a subset of themes."""
+    themes_list = "\n".join([
+        f"- {theme}" for theme in theme_data['themes']
+    ])
+    
+    prompt = f"""As a literary analyst, examine these themes and group them into meaningful uber-themes.
+Be concise and limit your analysis to the most significant patterns.
+Aim to create no more than 10 uber-themes total.
+
+Themes to analyze:
+{themes_list}
+
+Respond with a valid JSON object using this exact structure:
+{{
+    "uber_themes": [
+        {{
+            "name": "Example Theme Group",
+            "description": "Single line description",
+            "sub_themes": [
+                {{
+                    "name": "Original Theme",
+                    "connection": "Brief note"
+                }}
+            ]
+        }}
+    ],
+    "analysis": {{
+        "summary": "Brief overview",
+        "key_insights": [
+            "Key point 1",
+            "Key point 2",
+            "Key point 3"
+        ]
+    }}
+}}
+
+IMPORTANT FORMATTING RULES:
+1. Use double quotes for all strings
+2. No trailing commas
+3. No line breaks within strings
+4. Keep descriptions concise and single-line
+5. Ensure all JSON syntax is valid"""
+
+    headers = {
+        "Authorization": f"Bearer {config.PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a precise JSON generator. Always validate your JSON structure before responding."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    }
+    
+    try:
+        response = requests.post(
+            config.PERPLEXITY_API_URL,
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            content = response_data['choices'][0]['message']['content']
+            
+            # Clean and parse the response
+            content = content.strip()
+            start_idx = content.find('{')
+            end_idx = content.rfind('}') + 1
+            
+            if start_idx != -1 and end_idx != -1:
+                json_str = content[start_idx:end_idx]
+                
+                # Enhanced JSON cleaning
+                json_str = (json_str
+                    .replace('\n', ' ')  # Remove newlines
+                    .replace('\\n', ' ')  # Remove escaped newlines
+                    .replace('\t', ' ')   # Remove tabs
+                    .replace('\\', '\\\\')  # Escape backslashes
+                    .replace('""', '" "')   # Fix empty strings
+                )
+                
+                # Remove C-style comments
+                json_str = re.sub(r'/\*.*?\*/', '', json_str)
+                # Remove trailing commas before closing braces/brackets
+                json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+                # Remove any remaining comments that might break JSON
+                json_str = re.sub(r'//.*?(?=[\n\r]|$)', '', json_str)
+                
+                # Clean up any multiple spaces created by removals
+                json_str = re.sub(r'\s+', ' ', json_str)
+                
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError as e:
+                    if config.DEBUG_MODE:
+                        # Enhanced error reporting
+                        st.error(f"""JSON parsing error: {str(e)}
+                        
+Position: {e.pos}
+Line: {e.lineno}
+Column: {e.colno}
+
+Problematic section:
+{json_str[max(0, e.pos-50):min(len(json_str), e.pos+50)]}
+
+Full content:
+{json_str}""")
+                    return None
+                
+        return None
+        
+    except Exception as e:
+        if config.DEBUG_MODE:
+            st.error(f"Error analyzing themes chunk: {str(e)}")
+        return None
+
+def display_theme_analysis(theme_analysis: dict):
+    """Display the theme analysis in an organized way."""
+    # First display the summary analysis
+    if "analysis" in theme_analysis:
+        st.write("### 📚 Thematic Overview")
+        st.write(theme_analysis['analysis'].get('summary', ''))
+        
+        if theme_analysis['analysis'].get('key_insights'):
+            st.write("#### Key Insights")
+            for insight in theme_analysis['analysis']['key_insights']:
+                st.markdown(f"• {insight}")
+    
+    # Display uber-themes in a single dropdown
+    st.write("### 🎯 Thematic Groups")
+    
+    # Create a selection box for uber-themes
+    theme_names = [theme['name'] for theme in theme_analysis['uber_themes']]
+    selected_theme = st.selectbox(
+        "Select a thematic group to explore",
+        theme_names
+    )
+    
+    # Display the selected theme's details
+    if selected_theme:
+        # Find the selected theme
+        theme_details = next(
+            (theme for theme in theme_analysis['uber_themes'] 
+             if theme['name'] == selected_theme),
+            None
+        )
+        
+        if theme_details:
+            st.write(f"**Description:** {theme_details['description']}")
+            
+            # Create a DataFrame for the sub-themes
+            sub_themes_data = []
+            for theme in theme_details['sub_themes']:
+                sub_themes_data.append({
+                    'Theme': theme['name'],
+                    'Connection': theme['connection']
+                })
+            
+            if sub_themes_data:
+                st.write("**Related Themes:**")
+                df = pd.DataFrame(sub_themes_data)
+                st.dataframe(df, use_container_width=True)
 
 # Main application
 def main():
@@ -1082,6 +1423,55 @@ def main():
     elif page == "Analytics":
         st.header("Library Analytics")
         
+        # Add Theme Analysis section
+        st.subheader("Theme Analysis")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("Extract Current Themes"):
+                with st.spinner("Extracting themes from library..."):
+                    theme_data = extract_and_save_themes(conn)
+                    st.success(f"Extracted {len(theme_data['themes'])} unique themes!")
+                    
+                    # Show download button for theme inventory
+                    with open("data/theme_inventory.json", "r") as f:
+                        st.download_button(
+                            "Download Theme Inventory",
+                            f.read(),
+                            "theme_inventory.json",
+                            "application/json"
+                        )
+        
+        with col2:
+            if st.button("Analyze Theme Groupings"):
+                try:
+                    # Load existing theme inventory
+                    with open("data/theme_inventory.json", "r") as f:
+                        theme_data = json.load(f)
+                    
+                    with st.spinner("Analyzing themes..."):
+                        theme_analysis = analyze_theme_groupings(theme_data)
+                        if theme_analysis:
+                            st.success("Theme analysis complete!")
+                        else:
+                            st.error("Failed to analyze themes")
+                except FileNotFoundError:
+                    st.error("Please extract themes first")
+        
+        # Display existing theme analysis if available
+        try:
+            with open("data/theme_analysis.json", "r") as f:
+                theme_analysis = json.load(f)
+                st.divider()
+                display_theme_analysis(theme_analysis)
+        except FileNotFoundError:
+            if os.path.exists("data/theme_inventory.json"):
+                st.info("Theme inventory exists. Click 'Analyze Theme Groupings' to generate analysis.")
+            else:
+                st.info("No theme analysis available. Start by clicking 'Extract Current Themes'.")
+        
+        st.divider()
+        
         # Get analytics data
         stats, genre_counts, theme_counts = generate_analytics(conn)
         
@@ -1161,23 +1551,34 @@ def main():
         st.markdown("""
         This network visualization shows relationships between books in your collection.
         
-        **Relationship Factors:**
-        - 🎭 Shared Genres (weighted heavily)
-        - 📖 Fiction/Non-Fiction Category
-        - 📅 Same Decade
+        **Connection Types:**
+        - 👤 Author (Strong connection)
+        - 📅 Decade (Medium connection)
+        - 🎭 Themes (Connection strength based on number of shared themes)
         
         **How to Read:**
         - Larger nodes indicate books with more connections
-        - Darker colors indicate stronger relationships
+        - Different colored lines show different types of connections
         - Hover over nodes to see book details
-        - Hover over lines to see relationship details
-        
-        *Books are connected when they share multiple relationship factors*
+        - Hover over lines to see connection details
         """)
+        
+        # Add view selection
+        view_type = st.radio(
+            "Select View",
+            ["All Books", "Fiction Only", "Non-Fiction Only"],
+            horizontal=True
+        )
         
         # Create and display network
         with st.spinner("Generating network visualization..."):
-            G = create_book_network(conn)
+            category = None
+            if view_type == "Fiction Only":
+                category = "Fiction"
+            elif view_type == "Non-Fiction Only":
+                category = "Non-Fiction"
+            
+            G = create_book_network(conn, category)
             fig = visualize_book_network(G)
             
             if fig:
@@ -1187,11 +1588,9 @@ def main():
                 st.subheader("Network Statistics")
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Total Connections", len(G.edges()))
+                    st.metric("Total Books", len(G.nodes()))
                 with col2:
-                    if len(G.nodes()) > 0:
-                        density = nx.density(G)
-                        st.metric("Network Density", f"{density:.2%}")
+                    st.metric("Total Connections", len(G.edges()))
                 with col3:
                     if len(G.nodes()) > 0:
                         avg_connections = sum(dict(G.degree()).values()) / len(G.nodes())

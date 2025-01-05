@@ -45,6 +45,6 @@ REM Ensure venv is activated
 call myenv\Scripts\activate.bat
 
 REM Replace 'main.py' with your actual Python file name
-python main.py
+streamlit run shelflife.py
 pause
 goto menu 

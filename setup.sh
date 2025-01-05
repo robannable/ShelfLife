@@ -52,7 +52,7 @@ setup() {
 
 run() {
     # Replace 'main.py' with your actual Python file name
-    python3 main.py
+    streamlit run shelflife.py
     read -p "Press Enter to continue..."
     menu
 }
