@@ -832,7 +832,8 @@ def main():
             
             if submitted and title and author:
                 with st.spinner("Fetching book information..."):
-                    enhanced_data = enhance_book_data(title, author, year)
+                    # Update to include ISBN in the API call
+                    enhanced_data = enhance_book_data(title, author, year, isbn)
                     
                 if enhanced_data:
                     image_data = process_image(cover_image) if cover_image else None
@@ -1000,12 +1001,24 @@ def main():
                         with st.spinner("Updating book information..."):
                             enhanced_data = enhance_book_data(book[1], book[2], book[3], book[4])
                             if enhanced_data:
+                                # Update all relevant fields from the enhanced data
                                 c.execute('''
                                     UPDATE books 
-                                    SET metadata = ?, updated_at = ?
+                                    SET metadata = ?,
+                                        title = COALESCE(?, title),
+                                        author = COALESCE(?, author),
+                                        year = COALESCE(?, year),
+                                        isbn = COALESCE(?, isbn),
+                                        publisher = COALESCE(?, publisher),
+                                        updated_at = ?
                                     WHERE id = ?
                                 ''', (
                                     json.dumps(enhanced_data),
+                                    enhanced_data.get('title'),
+                                    enhanced_data.get('author'),
+                                    enhanced_data.get('year'),
+                                    enhanced_data.get('isbn'),
+                                    enhanced_data.get('publisher'),
                                     datetime.now().isoformat(),
                                     book[0]
                                 ))
