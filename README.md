@@ -1,6 +1,6 @@
 # ShelfLife
 
-ShelfLife is an intelligent library cataloguing tool that transforms minimal book input into rich, interconnected bibliographic data. It was created in Cursor AI with the help of an agentic LLM tool, using the prompt in the ShelfLife-prompt.md file.
+ShelfLife is an intelligent library cataloguing tool that transforms minimal book input into rich, interconnected bibliographic data. It uses multiple APIs and AI analysis to create a comprehensive personal library management system.
 
 ## Features
 
@@ -9,20 +9,26 @@ ShelfLife is an intelligent library cataloguing tool that transforms minimal boo
   - Open Library
   - Google Books
   - Perplexity AI for deep analysis
-- Cover image handling
+- Cover image handling with automatic resizing and format conversion
 - Rich book analysis including:
   - Synopsis
-  - Themes
-  - Genre classification
+  - Themes with hierarchical analysis
+  - Genre classification with fiction/non-fiction categorization
   - Historical context
-  - Related works
+  - Related works suggestions
 - Interactive visualizations:
-  - Genre distribution
-  - Theme relationships
-  - Book network connections
+  - Genre distribution with sunburst charts
+  - Theme relationship analysis
+  - Book network connections with force-directed graphs
+- Advanced theme analysis:
+  - Theme extraction and categorization
+  - Theme grouping analysis
+  - Downloadable theme inventory
 - Search and filter capabilities
 - Edit and update functionality
-- Analytics dashboard
+- Comprehensive analytics dashboard
+- Executive summary generation
+- CSV export functionality
 
 ## Project Structure
 
@@ -34,15 +40,16 @@ ShelfLife is an intelligent library cataloguing tool that transforms minimal boo
 
 ### Static Assets
 - `static/styles.css`
-  - Typography using Inter and Space Grotesk
+  - Modern typography using Inter and Space Grotesk
   - Responsive layout with 1200px max width
-  - Consistent spacing and visual hierarchy
+  - Dark mode compatible styling
   - Custom form and interactive element styling
 
 ### Data Storage
 - `data/` - Directory for storing:
   - SQLite database
   - Generated JSON catalogs
+  - Theme analysis data
   - Executive summaries
   - Cache files
 
@@ -50,29 +57,39 @@ ShelfLife is an intelligent library cataloguing tool that transforms minimal boo
 - `.gitignore` - Specifies which files Git should ignore
 - `.gitattributes` - Git attributes for file handling
 - `requirements.txt` - Python package dependencies
-- `setup.sh` - Installation and setup script
+- `setup.sh` - Linux/macOS installation script
+- `setup.bat` - Windows installation script
 
 ## Installation
 
 1. Clone the repository
-2. Create and activate a virtual environment
-3. Install requirements from requirements.txt
-4. Create config.py with your API keys:
+2. Create and activate a virtual environment:
+   - Windows: Run `setup.bat`
+   - Linux/macOS: Run `./setup.sh`
+3. Copy `config.template.py` to `config.py` and add your API keys:
    - PERPLEXITY_API_KEY
    - GOOGLE_BOOKS_API_KEY
-5. Run with: streamlit run shelflife.py
+4. Run with: `streamlit run shelflife.py`
 
 ## API Dependencies
 
-- Perplexity AI for enhanced book analysis
+- Perplexity AI for enhanced book analysis and theme extraction
 - Google Books API for basic metadata
 - Open Library API for additional book information
 
 ## Development
 
-- Built with Streamlit
-- Uses SQLite for local database storage
-- Implements caching for API responses
+- Built with Streamlit for rapid deployment
+- Uses SQLite for efficient local database storage
+- Implements LRU caching for API responses
 - Includes debug mode for API testing
+- Supports batch processing for theme analysis
+- Modular design for easy feature expansion
 
+## Data Analysis Features
 
+- Genre distribution analysis with fiction/non-fiction categorization
+- Theme extraction and hierarchical analysis
+- Network analysis of book relationships
+- Executive summary generation
+- Exportable data in JSON and CSV formats

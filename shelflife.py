@@ -19,6 +19,7 @@ from pathlib import Path
 from constants import STANDARD_GENRES, GENRE_PROMPT, GENRE_CATEGORIES
 from math import sqrt
 import re
+import csv
 
 # Cache for API responses
 @lru_cache(maxsize=1000)
@@ -236,14 +237,37 @@ def generate_analytics(conn):
     stats['total_books'] = c.execute('SELECT COUNT(*) FROM books').fetchone()[0]
     stats['unique_authors'] = c.execute('SELECT COUNT(DISTINCT author) FROM books').fetchone()[0]
     
-    # Calculate average year excluding NULL values
+    # Calculate average publication year excluding NULL values
     avg_year_result = c.execute('''
         SELECT AVG(CAST(year AS FLOAT))
         FROM books 
         WHERE year IS NOT NULL
     ''').fetchone()[0]
     
-    stats['avg_year'] = round(avg_year_result) if avg_year_result is not None else None
+    stats['avg_pub_year'] = round(avg_year_result) if avg_year_result is not None else None
+    
+    # Get time periods from metadata
+    books_df = pd.read_sql_query('''
+        SELECT metadata FROM books WHERE metadata IS NOT NULL
+    ''', conn)
+    
+    # Extract and process time periods
+    time_periods = []
+    for _, row in books_df.iterrows():
+        metadata = json.loads(row['metadata'])
+        if 'time_period' in metadata and metadata['time_period']:
+            time_periods.append(metadata['time_period'])
+    
+    # Calculate most common time period
+    if time_periods:
+        from collections import Counter
+        period_counts = Counter(time_periods)
+        stats['common_time_period'] = period_counts.most_common(1)[0][0]
+        # Calculate percentage of books with time period info
+        stats['time_period_coverage'] = len(time_periods) / stats['total_books']
+    else:
+        stats['common_time_period'] = None
+        stats['time_period_coverage'] = 0
     
     # Genre distribution with fiction/non-fiction categorization
     books_df = pd.read_sql_query('''
@@ -437,15 +461,20 @@ def refresh_all_metadata(conn):
     c = conn.cursor()
     books = c.execute('SELECT id, title, author, year, isbn FROM books').fetchall()
     total = len(books)
-    progress_bar = st.progress(0)
-    status_text = st.empty()
     
+    # Create progress indicators
+    progress_text = st.empty()
+    progress_bar = st.progress(0)
+    error_container = st.empty()
+    success_count = 0
+    errors = []
+
     for i, book in enumerate(books):
         try:
             # Update progress
             progress = (i + 1) / total
             progress_bar.progress(progress)
-            status_text.text(f"Processing {i+1} of {total}: {book[1]}")
+            progress_text.text(f"Processing {i+1} of {total}: {book[1]} by {book[2]}")
             
             # Get fresh metadata
             enhanced_data = enhance_book_data(book[1], book[2], book[3], book[4])
@@ -462,17 +491,31 @@ def refresh_all_metadata(conn):
                     book[0]
                 ))
                 conn.commit()
+                success_count += 1
+            else:
+                errors.append(f"No metadata retrieved for: {book[1]} by {book[2]}")
                 
         except Exception as e:
+            error_msg = f"Error updating {book[1]}: {str(e)}"
+            errors.append(error_msg)
             if config.DEBUG_MODE:
-                st.error(f"Error updating {book[1]}: {str(e)}")
+                st.error(error_msg)
             continue
     
     # Clear progress indicators
     progress_bar.empty()
-    status_text.empty()
+    progress_text.empty()
     
-    return True
+    # Show final results
+    if success_count > 0:
+        st.success(f"Successfully updated metadata for {success_count} of {total} books")
+    
+    if errors and config.DEBUG_MODE:
+        with error_container.expander("Show Errors"):
+            for error in errors:
+                st.error(error)
+    
+    return success_count > 0
 
 def manage_executive_summary(conn, summary_data=None, refresh=False):
     """Manage executive summary storage and retrieval."""
@@ -1086,6 +1129,59 @@ def display_theme_analysis(theme_analysis: dict):
                 df = pd.DataFrame(sub_themes_data)
                 st.dataframe(df, use_container_width=True)
 
+def export_library_to_csv(conn) -> str:
+    """Export library data to CSV format."""
+    import csv
+    from pathlib import Path
+    
+    # Create data directory if it doesn't exist
+    data_dir = Path("data")
+    data_dir.mkdir(exist_ok=True)
+    csv_path = data_dir / "library_export.csv"
+    
+    c = conn.cursor()
+    # Get all books with their metadata
+    books = c.execute('''
+        SELECT 
+            title, author, year, isbn, publisher, condition, 
+            personal_notes, metadata, created_at, updated_at 
+        FROM books
+    ''').fetchall()
+    
+    # Define CSV headers
+    headers = [
+        'Title', 'Author', 'Year', 'ISBN', 'Publisher', 'Condition',
+        'Personal Notes', 'Genres', 'Themes', 'Synopsis',
+        'Date Added', 'Last Updated'
+    ]
+    
+    with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        
+        for book in books:
+            # Parse metadata JSON
+            metadata = json.loads(book[7]) if book[7] else {}
+            
+            # Prepare row data
+            row = [
+                book[0],  # Title
+                book[1],  # Author
+                book[2],  # Year
+                book[3],  # ISBN
+                book[4],  # Publisher
+                book[5],  # Condition
+                book[6],  # Personal Notes
+                '; '.join(metadata.get('genre', [])),  # Genres
+                '; '.join(metadata.get('themes', [])),  # Themes
+                metadata.get('synopsis', ''),  # Synopsis
+                book[8][:10] if book[8] else '',  # Date Added (date only)
+                book[9][:10] if book[9] else ''   # Last Updated (date only)
+            ]
+            writer.writerow(row)
+    
+    return str(csv_path)
+
 # Main application
 def main():
     # Set page configuration
@@ -1196,6 +1292,28 @@ def main():
     
     elif page == "View Collection":
         st.header("Your Library")
+        
+        # Add export button in a container at the top
+        with st.container():
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                if st.button("📥 Export to CSV"):
+                    try:
+                        csv_path = export_library_to_csv(conn)
+                        with open(csv_path, 'r', encoding='utf-8') as f:
+                            csv_data = f.read()
+                            st.download_button(
+                                label="Download CSV",
+                                data=csv_data,
+                                file_name="library_export.csv",
+                                mime="text/csv"
+                            )
+                        st.success("CSV file generated successfully!")
+                    except Exception as e:
+                        if config.DEBUG_MODE:
+                            st.error(f"Error generating CSV: {str(e)}")
+                        else:
+                            st.error("Error generating CSV file")
         
         # Search and filter options
         search = st.text_input("Search books", "")
@@ -1475,17 +1593,32 @@ def main():
         # Get analytics data
         stats, genre_counts, theme_counts = generate_analytics(conn)
         
-        # Basic metrics
-        col1, col2, col3, col4 = st.columns(4)
+        # Basic metrics with enhanced time information
+        col1, col2, col3, col4, col5 = st.columns(5)
+        
         col1.metric("Total Books", stats['total_books'])
         col2.metric("Unique Authors", stats['unique_authors'])
-        col3.metric("Average Year", 
-                   stats['avg_year'] if stats['avg_year'] is not None else "N/A")
+        
+        # Display publication year info
+        if stats['avg_pub_year']:
+            col3.metric("Avg. Publication Year", stats['avg_pub_year'])
+        else:
+            col3.metric("Avg. Publication Year", "N/A")
+        
+        # Display time period info
+        if stats['common_time_period']:
+            col4.metric(
+                "Common Time Period", 
+                stats['common_time_period'],
+                f"{round(stats['time_period_coverage'] * 100)}% coverage"
+            )
+        else:
+            col4.metric("Common Time Period", "N/A")
         
         # Fiction vs Non-Fiction ratio
         fiction_percentage = round(stats['fiction_ratio'] * 100)
         nonfiction_percentage = round(stats['nonfiction_ratio'] * 100)
-        col4.metric("Fiction/Non-Fiction", 
+        col5.metric("Fiction/Non-Fiction", 
                    f"{fiction_percentage}% / {nonfiction_percentage}%")
         
         # Genre distribution with separate Fiction and Non-Fiction sections
@@ -1613,8 +1746,8 @@ def main():
         with col2:
             st.metric("Unique Authors", stats['unique_authors'])
         with col3:
-            st.metric("Average Year", 
-                     stats['avg_year'] if stats['avg_year'] is not None else "N/A")
+            st.metric("Average Publication Year", 
+                     stats['avg_pub_year'] if stats['avg_pub_year'] is not None else "N/A")
         with col4:
             fiction_percentage = round(stats['fiction_ratio'] * 100)
             nonfiction_percentage = round(stats['nonfiction_ratio'] * 100)
