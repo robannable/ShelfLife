@@ -2,94 +2,341 @@
 
 ShelfLife is an intelligent library cataloguing tool that transforms minimal book input into rich, interconnected bibliographic data. It uses multiple APIs and AI analysis to create a comprehensive personal library management system.
 
+**New:** Refactored with modular architecture, improved error handling, and support for Anthropic Claude and Ollama LLMs.
+
 ## Features
 
-- Minimal data entry requirements (title and author)
-- Automatic metadata enhancement using multiple APIs:
-  - Open Library
-  - Google Books
-  - Perplexity AI for deep analysis
-- Cover image handling with automatic resizing and format conversion
-- Rich book analysis including:
-  - Synopsis
-  - Themes with hierarchical analysis
+- **Minimal data entry** - Just title and author required
+- **AI-Powered metadata enhancement** using:
+  - Anthropic Claude or Ollama (local LLM)
+  - Google Books API
+  - Open Library API
+- **Cover image handling** with automatic resizing and format conversion
+- **Rich book analysis** including:
+  - Synopsis generation
+  - Theme extraction with hierarchical analysis
   - Genre classification with fiction/non-fiction categorization
   - Historical context
   - Related works suggestions
-- Interactive visualizations:
+- **Interactive visualizations**:
   - Genre distribution with sunburst charts
   - Theme relationship analysis
   - Book network connections with force-directed graphs
-- Advanced theme analysis:
+- **Advanced theme analysis**:
   - Theme extraction and categorization
-  - Theme grouping analysis
+  - Theme grouping analysis with uber-themes
   - Downloadable theme inventory
-- Search and filter capabilities
-- Edit and update functionality
-- Comprehensive analytics dashboard
-- Executive summary generation
-- CSV export functionality
+- **Search and filter** capabilities
+- **Personal notes** for each book
+- **Comprehensive analytics** dashboard
+- **Executive summary** generation
+- **CSV export** functionality
+- **Network visualization** showing book relationships
 
-## Project Structure
+## Architecture
 
-### Core Files
-- `shelflife.py` - Main application file containing the Streamlit interface and core logic
-- `config.py` - Configuration file for API keys and application settings
-- `api_utils.py` - Utility functions for API interactions and data fetching
-- `constants.py` - Shared constants including genre lists, prompts, and taxonomies
+ShelfLife features a modular, maintainable architecture:
+
+### Core Modules
+
+- `shelflife.py` - Streamlit UI and application entry point
+- `database.py` - Database operations with error handling and context managers
+- `book_service.py` - Book enhancement and LLM integration services
+- `llm_client.py` - LLM abstraction layer (Anthropic & Ollama support)
+- `models.py` - Data models with validation using dataclasses
+- `analytics.py` - Analytics generation and visualization functions
+- `api_utils.py` - External API integrations (Google Books, Open Library)
+- `logger.py` - Centralized logging system with file rotation
+- `constants.py` - Shared constants including genre lists and prompts
+- `config.py` - Configuration file for API keys and settings
 
 ### Static Assets
-- `static/styles.css`
-  - Modern typography using Inter and Space Grotesk
-  - Responsive layout with 1200px max width
-  - Dark mode compatible styling
-  - Custom form and interactive element styling
+
+- `static/styles.css` - Modern, responsive styling with dark mode support
 
 ### Data Storage
-- `data/` - Directory for storing:
-  - SQLite database
+
+- `data/` - Directory for:
+  - SQLite database (`database.db`)
   - Generated JSON catalogs
   - Theme analysis data
   - Executive summaries
-  - Cache files
+  - Log files (`logs/`)
 
-### Configuration Files
-- `.gitignore` - Specifies which files Git should ignore
-- `.gitattributes` - Git attributes for file handling
-- `requirements.txt` - Python package dependencies
-- `setup.sh` - Linux/macOS installation script
-- `setup.bat` - Windows installation script
+## Quick Start
 
-## Installation
+### 1. Install Dependencies
 
-1. Clone the repository
-2. Create and activate a virtual environment:
-   - Windows: Run `setup.bat`
-   - Linux/macOS: Run `./setup.sh`
-3. Copy `config.template.py` to `config.py` and add your API keys:
-   - PERPLEXITY_API_KEY
-   - GOOGLE_BOOKS_API_KEY
-4. Run with: `streamlit run shelflife.py`
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/ShelfLife.git
+cd ShelfLife
 
-## API Dependencies
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-- Perplexity AI for enhanced book analysis and theme extraction
-- Google Books API for basic metadata
-- Open Library API for additional book information
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 2. Configure LLM Provider
+
+Copy the config template:
+```bash
+cp config.template.py config.py
+```
+
+Choose your LLM provider by editing `config.py`:
+
+#### Option A: Anthropic Claude (Recommended)
+
+```python
+LLM_PROVIDER = "anthropic"
+ANTHROPIC_API_KEY = "sk-ant-your-key-here"
+ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
+```
+
+Get an API key at [console.anthropic.com](https://console.anthropic.com/)
+
+#### Option B: Ollama (Local, Free)
+
+1. Install Ollama from [ollama.ai](https://ollama.ai/)
+2. Pull a model: `ollama pull llama3.1`
+3. Configure in `config.py`:
+
+```python
+LLM_PROVIDER = "ollama"
+OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_MODEL = "llama3.1"
+```
+
+### 3. Optional: Google Books API
+
+For enhanced metadata, get a free API key at [Google Books API](https://developers.google.com/books/docs/v1/using)
+
+```python
+GOOGLE_BOOKS_API_KEY = "your-google-books-api-key"
+```
+
+### 4. Run the Application
+
+```bash
+streamlit run shelflife.py
+```
+
+Open your browser to `http://localhost:8501`
+
+## LLM Provider Comparison
+
+| Feature | Anthropic Claude | Ollama |
+|---------|-----------------|---------|
+| Cost | Pay-per-use | Free (local) |
+| Setup | API key only | Install + download models |
+| Speed | Fast (cloud) | Depends on hardware |
+| Quality | Excellent | Good (model-dependent) |
+| Privacy | Cloud-based | Fully local |
+| Best for | Production use | Privacy-conscious users |
+
+## Key Improvements (Refactored Version)
+
+### Modular Architecture
+- Clean separation of concerns: UI, business logic, data layer
+- 1,854-line monolith split into 7 focused modules
+- Easy to test, maintain, and extend
+
+### Error Handling
+- Comprehensive try-except blocks throughout
+- Centralized logging with daily file rotation
+- Database context managers for automatic rollback
+- Graceful degradation when APIs fail
+- User-friendly error messages
+
+### LLM Flexibility
+- Support for both cloud (Anthropic) and local (Ollama) LLMs
+- Easy to add new LLM providers
+- Unified API across providers
+- Robust JSON parsing for various response formats
+
+### Performance
+- Database connection pooling
+- Efficient query optimization
+- Caching for API responses
+- Batch processing for theme analysis
+
+## Usage
+
+### Adding Books
+
+1. Navigate to "Add Book" page
+2. Enter title and author (required)
+3. Optionally add: year, ISBN, publisher, condition, cover image, personal notes
+4. Click "Add Book" - ShelfLife will automatically fetch and enhance metadata
+
+### Viewing Your Collection
+
+- Search and filter books
+- View detailed information including AI-generated analysis
+- See related books in your collection
+- Export to CSV
+- Edit or delete books
+- Refresh metadata with latest AI analysis
+
+### Analytics
+
+- View statistics about your collection
+- Explore genre distribution (fiction vs. non-fiction)
+- Analyze themes across your library
+- Extract and group themes into uber-themes
+- Download theme inventory
+
+### Network View
+
+- Visualize relationships between books
+- Filter by fiction/non-fiction
+- See connections based on:
+  - Same author
+  - Same decade
+  - Shared themes
+
+### Executive Summary
+
+- Generate library catalog (JSON)
+- Get AI-powered summary of your collection
+- Discover patterns in your reading habits
+- Receive reading recommendations
+
+### Ask the Library
+
+- Query your collection using natural language
+- Get insights about themes, authors, genres
+- Discover underrepresented areas
+- Get book recommendations based on mood or topic
+
+## Configuration
+
+### Logging
+
+Logs are stored in `data/logs/` with daily rotation.
+
+Adjust log level in `config.py`:
+```python
+LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+```
+
+### Debug Mode
+
+Enable detailed error messages:
+```python
+DEBUG_MODE = True
+```
+
+### Image Settings
+
+```python
+MAX_IMAGE_SIZE = 800  # pixels
+ALLOWED_IMAGE_TYPES = ['.jpg', '.jpeg', '.png']
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+```
 
 ## Development
 
-- Built with Streamlit for rapid deployment
-- Uses SQLite for efficient local database storage
-- Implements LRU caching for API responses
-- Includes debug mode for API testing
-- Supports batch processing for theme analysis
-- Modular design for easy feature expansion
+### Project Structure
+```
+ShelfLife/
+├── shelflife.py          # Main application
+├── database.py           # Database layer
+├── book_service.py       # Business logic
+├── llm_client.py         # LLM abstraction
+├── models.py             # Data models
+├── analytics.py          # Analytics functions
+├── api_utils.py          # External APIs
+├── logger.py             # Logging system
+├── constants.py          # Constants
+├── config.py             # Configuration (not in repo)
+├── config.template.py    # Config template
+├── requirements.txt      # Dependencies
+├── static/
+│   └── styles.css        # Styling
+├── data/                 # Data directory (not in repo)
+│   ├── database.db
+│   ├── logs/
+│   └── *.json
+└── SETUP_INSTRUCTIONS.md
+```
 
-## Data Analysis Features
+### Adding New Features
 
-- Genre distribution analysis with fiction/non-fiction categorization
-- Theme extraction and hierarchical analysis
-- Network analysis of book relationships
-- Executive summary generation
-- Exportable data in JSON and CSV formats
+- **New LLM provider**: Extend `llm_client.py`
+- **New analytics**: Add functions to `analytics.py`
+- **New data fields**: Update `models.py` and database schema
+- **New UI pages**: Add render functions in `shelflife.py`
+
+### Testing
+
+The modular architecture makes testing easier:
+
+```python
+# Example: Test database operations
+from database import Database
+db = Database(":memory:")  # In-memory database for testing
+```
+
+## Troubleshooting
+
+### LLM Connection Issues
+
+1. Check API status using the sidebar button
+2. For Anthropic: Verify API key is valid
+3. For Ollama: Ensure Ollama is running (`ollama serve`)
+4. Check logs in `data/logs/`
+
+### Database Issues
+
+- Ensure `data/` directory is writable
+- Check logs for detailed error messages
+- Enable `DEBUG_MODE = True` for more information
+
+### Import Errors
+
+```bash
+pip install -r requirements.txt --upgrade
+```
+
+## Migration from Earlier Versions
+
+The refactored version maintains backward compatibility with existing databases. Your data will be automatically migrated when you first run the new version.
+
+## Requirements
+
+- Python 3.8+
+- Streamlit 1.28.0+
+- See `requirements.txt` for complete list
+
+## Contributing
+
+Contributions welcome! The modular architecture makes it easy to:
+- Add new LLM providers
+- Extend analytics
+- Add new visualizations
+- Improve error handling
+
+## License
+
+[Add your license here]
+
+## Acknowledgments
+
+- Built with [Streamlit](https://streamlit.io/)
+- AI powered by [Anthropic Claude](https://www.anthropic.com/) or [Ollama](https://ollama.ai/)
+- Metadata from [Google Books](https://books.google.com/) and [Open Library](https://openlibrary.org/)
+- Network visualization with [NetworkX](https://networkx.org/) and [Plotly](https://plotly.com/)
+
+## Support
+
+For detailed setup instructions, see [SETUP_INSTRUCTIONS.md](SETUP_INSTRUCTIONS.md)
+
+For issues or questions:
+- Check the logs in `data/logs/`
+- Enable `DEBUG_MODE = True` in config.py
+- Review error messages in the Streamlit interface
