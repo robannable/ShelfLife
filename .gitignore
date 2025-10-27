@@ -41,5 +41,9 @@ data/
 data/*.json 
 
 # Exclude compiled CSS
-static/*.css.map 
+static/*.css.map
 config.py
+
+# Backup files
+*_old.py
+*.backup
