@@ -341,3 +341,213 @@ class TestTransactionRollback:
         # Verify no book was added due to rollback
         final_count = len(in_memory_db.get_all_books())
         assert final_count == initial_count
+
+
+class TestDatabaseBackup:
+    """Test database backup functionality."""
+
+    def test_backup_database(self, tmp_path):
+        """Test creating a database backup."""
+        from pathlib import Path
+
+        # Create a temporary database
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+
+        # Add a book
+        book = Book(title="Test Book", author="Test Author")
+        db.add_book(book)
+
+        # Create backup
+        backup_path = tmp_path / "backup.db"
+        result = db.backup_database(str(backup_path))
+
+        assert result == str(backup_path)
+        assert Path(backup_path).exists()
+
+        # Verify backup has same size as original
+        original_size = Path(db_path).stat().st_size
+        backup_size = Path(backup_path).stat().st_size
+        assert backup_size == original_size
+
+    def test_automatic_backup_path(self, tmp_path, monkeypatch):
+        """Test automatic backup path generation."""
+        # Create a temporary database
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+
+        # Add a book
+        book = Book(title="Test Book", author="Test Author")
+        db.add_book(book)
+
+        # Change to tmp directory for backup
+        monkeypatch.chdir(tmp_path)
+
+        # Create backup with automatic path
+        backup_path = db.backup_database()
+
+        assert backup_path is not None
+        assert "database_backup_" in backup_path
+        assert Path(backup_path).exists()
+
+    def test_backup_nonexistent_database(self, tmp_path):
+        """Test backup fails for nonexistent database."""
+        from database import DatabaseError
+
+        db = Database(str(tmp_path / "nonexistent.db"))
+
+        with pytest.raises(DatabaseError, match="Source database not found"):
+            db.backup_database()
+
+
+class TestDatabaseRestore:
+    """Test database restore functionality."""
+
+    def test_restore_database(self, tmp_path):
+        """Test restoring from a backup."""
+        # Create original database with a book
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+        book1 = Book(title="Original Book", author="Original Author")
+        db.add_book(book1)
+
+        # Create backup
+        backup_path = tmp_path / "backup.db"
+        db.backup_database(str(backup_path))
+
+        # Add another book to original
+        book2 = Book(title="New Book", author="New Author")
+        db.add_book(book2)
+
+        # Verify original has 2 books
+        assert len(db.get_all_books()) == 2
+
+        # Restore from backup
+        db.restore_database(str(backup_path), confirm=True)
+
+        # Verify restored database has only 1 book
+        assert len(db.get_all_books()) == 1
+
+    def test_restore_requires_confirmation(self, tmp_path):
+        """Test restore requires explicit confirmation."""
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+        backup_path = tmp_path / "backup.db"
+
+        with pytest.raises(ValueError, match="explicit confirmation"):
+            db.restore_database(str(backup_path), confirm=False)
+
+    def test_restore_nonexistent_backup(self, tmp_path):
+        """Test restore fails for nonexistent backup."""
+        from database import DatabaseError
+
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+
+        with pytest.raises(DatabaseError, match="Backup file not found"):
+            db.restore_database(str(tmp_path / "nonexistent.db"), confirm=True)
+
+    def test_restore_creates_safety_backup(self, tmp_path):
+        """Test restore creates safety backup of current database."""
+        # Create database with data
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+        book = Book(title="Test Book", author="Test Author")
+        db.add_book(book)
+
+        # Create a backup to restore from
+        backup_path = tmp_path / "backup.db"
+        db.backup_database(str(backup_path))
+
+        # Restore (should create safety backup)
+        db.restore_database(str(backup_path), confirm=True)
+
+        # Safety backup should exist
+        safety_backup = f"{db_path}.pre_restore_backup"
+        assert Path(safety_backup).exists()
+
+
+class TestDatabaseListBackups:
+    """Test listing database backups."""
+
+    def test_list_backups_empty(self, tmp_path):
+        """Test listing backups when none exist."""
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+
+        backups = db.list_backups(str(tmp_path))
+        assert backups == []
+
+    def test_list_backups(self, tmp_path):
+        """Test listing existing backups."""
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+
+        # Add a book
+        book = Book(title="Test Book", author="Test Author")
+        db.add_book(book)
+
+        # Create multiple backups
+        backup1 = tmp_path / "backup1.db"
+        backup2 = tmp_path / "backup2.db"
+
+        db.backup_database(str(backup1))
+        db.backup_database(str(backup2))
+
+        # List backups
+        backups = db.list_backups(str(tmp_path))
+
+        assert len(backups) == 2
+        assert all('path' in b for b in backups)
+        assert all('size_mb' in b for b in backups)
+        assert all('created' in b for b in backups)
+
+
+class TestDatabaseHealthCheck:
+    """Test database health check."""
+
+    def test_health_check_healthy_database(self, tmp_path):
+        """Test health check on healthy database."""
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+
+        # Add some books
+        for i in range(5):
+            book = Book(title=f"Book {i}", author=f"Author {i}")
+            db.add_book(book)
+
+        health = db.health_check()
+
+        assert health['accessible'] is True
+        assert health['total_books'] == 5
+        assert health['schema_version'] >= 1
+        assert len(health['issues']) >= 0  # May have "no backups" issue
+
+    def test_health_check_nonexistent_database(self, tmp_path):
+        """Test health check on nonexistent database."""
+        db = Database(str(tmp_path / "nonexistent.db"))
+
+        health = db.health_check()
+
+        assert health['accessible'] is False
+        assert "does not exist" in health['issues'][0]
+
+
+class TestDatabaseVacuum:
+    """Test database vacuum operation."""
+
+    def test_vacuum_database(self, tmp_path):
+        """Test vacuuming database."""
+        db_path = tmp_path / "test.db"
+        db = Database(str(db_path))
+
+        # Add and delete books to create fragmentation
+        for i in range(10):
+            book = Book(title=f"Book {i}", author="Author")
+            book_id = db.add_book(book)
+            if i % 2 == 0:
+                db.delete_book(book_id)
+
+        # Vacuum
+        result = db.vacuum()
+        assert result is True

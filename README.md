@@ -40,24 +40,27 @@ ShelfLife features a modular, maintainable architecture:
 ### Core Modules
 
 - `shelflife.py` - Streamlit UI and application entry point
-- `database.py` - Database operations with error handling and context managers
+- `database.py` - **UPDATED:** Database operations with backup/restore utilities
 - `book_service.py` - Book enhancement and LLM integration services
-- `llm_client.py` - LLM abstraction layer (Anthropic & Ollama support)
+- `llm_client.py` - **UPDATED:** LLM abstraction with retry logic and rate limiting
 - `models.py` - Data models with validation using dataclasses
 - `analytics.py` - Analytics generation and visualization functions
-- `api_utils.py` - External API integrations (Google Books, Open Library)
-- `validation.py` - **NEW:** Input validation and sanitization
+- `api_utils.py` - **UPDATED:** External APIs with retry logic and rate limiting
+- `validation.py` - **NEW v2.0:** Input validation and sanitization
+- `network_utils.py` - **NEW v2.1:** Network resilience (retry, rate limiting, circuit breaker)
 - `logger.py` - Centralized logging system with file rotation
 - `constants.py` - Shared constants including genre lists and prompts
-- `config.template.py` - **UPDATED:** Environment-based configuration template
+- `config.template.py` - **UPDATED v2.0:** Environment-based configuration template
 
 ### Test Suite
 
-- `tests/test_validation.py` - **NEW:** Validation function tests
-- `tests/test_database.py` - **NEW:** Database operation tests
-- `tests/test_models.py` - **NEW:** Data model tests
-- `tests/test_llm_client.py` - **NEW:** LLM client abstraction tests
-- `pytest.ini` - **NEW:** Pytest configuration with coverage settings
+- `tests/test_validation.py` - **NEW v2.0:** Validation function tests
+- `tests/test_database.py` - **UPDATED v2.1:** Database operations + backup/restore tests
+- `tests/test_models.py` - **NEW v2.0:** Data model tests
+- `tests/test_llm_client.py` - **NEW v2.0:** LLM client abstraction tests
+- `tests/test_network_utils.py` - **NEW v2.1:** Network utilities tests (retry, rate limiting)
+- `tests/conftest.py` - **NEW v2.0:** Shared test fixtures
+- `pytest.ini` - **NEW v2.0:** Pytest configuration with coverage settings
 
 ### Static Assets
 
@@ -205,24 +208,38 @@ View coverage report: `open htmlcov/index.html`
 - ✅ **No Hardcoded Secrets:** Template-based configuration with examples
 
 ### Testing & Quality (NEW in v2.0)
-- ✅ **Comprehensive Test Suite:** 100+ tests covering core functionality
-- ✅ **Unit Tests:** Validation, models, database, LLM client
+- ✅ **Comprehensive Test Suite:** 150+ tests covering core functionality
+- ✅ **Unit Tests:** Validation, models, database, LLM client, network utilities
 - ✅ **Test Fixtures:** Shared fixtures for consistent testing
 - ✅ **Coverage Reporting:** Pytest with coverage tracking
 - ✅ **CI-Ready:** Tests can be integrated into GitHub Actions
-- 📊 **Target Coverage:** 30-40% initially, expanding to 70%+
+- 📊 **Target Coverage:** 40-50% currently, expanding to 70%+
+
+### Reliability & Resilience (NEW in v2.1)
+- ✅ **API Retry Logic:** Exponential backoff with configurable retries
+- ✅ **Rate Limiting:** Token bucket algorithm prevents API throttling
+- ✅ **Circuit Breaker:** Prevents cascading failures
+- ✅ **Database Backups:** Automated backup/restore with verification
+- ✅ **Health Checks:** Database integrity monitoring
+- ✅ **Error Recovery:** Automatic safety backups before destructive operations
+- ✅ **Network Resilience:** Session-based retry strategies for all external APIs
 
 ### LLM Flexibility
 - Support for both cloud (Anthropic) and local (Ollama) LLMs
 - Easy to add new LLM providers
 - Unified API across providers
 - Robust JSON parsing for various response formats
+- **NEW:** Automatic retry on transient failures
+- **NEW:** Rate limiting to prevent API throttling
+- **NEW:** Circuit breaker for service outages
 
-### Performance
-- Database connection pooling
-- Efficient query optimization
-- Caching for API responses
-- Batch processing for theme analysis
+### Performance & Reliability
+- Database connection pooling with context managers
+- Efficient query optimization with indexed columns
+- **NEW:** Automatic retry with exponential backoff
+- **NEW:** Rate limiting (50 req/min Anthropic, 30 req/min Google Books)
+- **NEW:** Database vacuum for space reclamation
+- Batch processing for theme analysis with chunking
 
 ## Usage
 
@@ -272,6 +289,70 @@ View coverage report: `open htmlcov/index.html`
 - Get insights about themes, authors, genres
 - Discover underrepresented areas
 - Get book recommendations based on mood or topic
+
+### Database Management (NEW in v2.1)
+
+ShelfLife now includes comprehensive database management utilities for data protection and maintenance.
+
+#### Creating Backups
+
+```python
+from database import Database
+
+db = Database()
+
+# Create automatic timestamped backup
+backup_path = db.backup_database()
+print(f"Backup created: {backup_path}")
+
+# Create backup with custom path
+db.backup_database("custom_backup.db")
+```
+
+#### Restoring from Backup
+
+```python
+# List available backups
+backups = db.list_backups()
+for backup in backups:
+    print(f"{backup['name']}: {backup['size_mb']} MB, {backup['created']}")
+
+# Restore from backup (requires confirmation for safety)
+db.restore_database("data/backups/database_backup_20241120_143022.db", confirm=True)
+```
+
+**Safety Features:**
+- Automatic safety backup created before restore
+- Confirmation required to prevent accidental data loss
+- Backup verification (size check)
+- Automatic rollback on restore failure
+
+#### Health Checks
+
+```python
+# Run database health check
+health = db.health_check()
+
+print(f"Accessible: {health['accessible']}")
+print(f"Total books: {health['total_books']}")
+print(f"Database size: {health['size_mb']} MB")
+print(f"Schema version: {health['schema_version']}")
+print(f"Last backup: {health['last_backup']}")
+print(f"Issues: {health['issues']}")
+```
+
+#### Database Maintenance
+
+```python
+# Vacuum database to reclaim space after deletions
+db.vacuum()
+```
+
+**Recommended Backup Schedule:**
+- Before major operations (bulk imports, updates)
+- Weekly for active collections
+- Before schema migrations
+- Before app upgrades
 
 ## Configuration
 
