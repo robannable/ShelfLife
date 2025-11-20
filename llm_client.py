@@ -7,8 +7,20 @@ from typing import Optional, Dict, Any, List
 from abc import ABC, abstractmethod
 import requests
 from logger import get_logger
+from network_utils import (
+    retry_with_backoff,
+    RetryConfig,
+    create_session_with_retries,
+    RateLimiter
+)
 
 logger = get_logger(__name__)
+
+# Rate limiters for different providers
+# Anthropic: 50 requests/minute for tier 1
+# Ollama: No rate limit (local), but we add a reasonable limit
+ANTHROPIC_RATE_LIMITER = RateLimiter(calls_per_minute=50, burst_size=10)
+OLLAMA_RATE_LIMITER = RateLimiter(calls_per_minute=120, burst_size=20)
 
 
 class LLMClient(ABC):
@@ -37,11 +49,56 @@ class AnthropicClient(LLMClient):
             "anthropic-version": "2023-06-01",
             "content-type": "application/json"
         }
+        # Configure retry behavior for Anthropic API
+        self.retry_config = RetryConfig(
+            max_retries=3,
+            initial_delay=2.0,
+            max_delay=30.0,
+            exponential_base=2.0,
+            retryable_status_codes=(429, 500, 502, 503, 504)  # Anthropic specific
+        )
+        self.session = create_session_with_retries(
+            max_retries=3,
+            backoff_factor=1.0,
+            status_forcelist=(429, 500, 502, 503, 504)
+        )
         logger.info(f"Initialized Anthropic client with model: {model}")
 
+    @retry_with_backoff()
+    def _make_api_call(self, payload: Dict[str, Any], timeout: int = 60) -> requests.Response:
+        """
+        Make API call with retry logic.
+
+        Args:
+            payload: Request payload
+            timeout: Request timeout in seconds
+
+        Returns:
+            Response object
+
+        Raises:
+            requests.HTTPError: On HTTP errors
+            requests.Timeout: On timeout
+        """
+        response = self.session.post(
+            self.api_url,
+            headers=self.headers,
+            json=payload,
+            timeout=timeout
+        )
+
+        # Raise HTTPError for bad status codes (will be caught by retry decorator)
+        if response.status_code >= 400:
+            response.raise_for_status()
+
+        return response
+
     def generate(self, prompt: str, system_prompt: Optional[str] = None, max_tokens: int = 4096) -> Optional[str]:
-        """Generate a response using Claude."""
+        """Generate a response using Claude with retry logic and rate limiting."""
         try:
+            # Apply rate limiting
+            ANTHROPIC_RATE_LIMITER.wait_if_needed()
+
             payload = {
                 "model": self.model,
                 "max_tokens": max_tokens,
@@ -52,12 +109,9 @@ class AnthropicClient(LLMClient):
                 payload["system"] = system_prompt
 
             logger.debug(f"Sending request to Anthropic API with model {self.model}")
-            response = requests.post(
-                self.api_url,
-                headers=self.headers,
-                json=payload,
-                timeout=60
-            )
+
+            # Make API call with automatic retries
+            response = self._make_api_call(payload)
 
             if response.status_code == 200:
                 data = response.json()
@@ -68,11 +122,17 @@ class AnthropicClient(LLMClient):
                 logger.error(f"Anthropic API error: {response.status_code} - {response.text}")
                 return None
 
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Anthropic API HTTP error: {str(e)}")
+            return None
         except requests.exceptions.Timeout:
-            logger.error("Anthropic API request timed out")
+            logger.error("Anthropic API request timed out after retries")
+            return None
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Anthropic API connection error: {str(e)}")
             return None
         except Exception as e:
-            logger.error(f"Error calling Anthropic API: {str(e)}", exc_info=True)
+            logger.error(f"Unexpected error calling Anthropic API: {str(e)}", exc_info=True)
             return None
 
     def test_connection(self) -> Dict[str, Any]:
@@ -95,11 +155,56 @@ class OllamaClient(LLMClient):
         self.base_url = base_url.rstrip('/')
         self.model = model
         self.api_url = f"{self.base_url}/api/generate"
+        # Configure retry behavior for Ollama API
+        self.retry_config = RetryConfig(
+            max_retries=2,  # Fewer retries for local service
+            initial_delay=1.0,
+            max_delay=10.0,
+            exponential_base=2.0,
+            retryable_status_codes=(500, 502, 503, 504)
+        )
+        self.session = create_session_with_retries(
+            max_retries=2,
+            backoff_factor=0.5,
+            status_forcelist=(500, 502, 503, 504)
+        )
         logger.info(f"Initialized Ollama client with model: {model} at {base_url}")
 
+    @retry_with_backoff()
+    def _make_api_call(self, payload: Dict[str, Any], timeout: int = 120) -> requests.Response:
+        """
+        Make API call with retry logic.
+
+        Args:
+            payload: Request payload
+            timeout: Request timeout in seconds
+
+        Returns:
+            Response object
+
+        Raises:
+            requests.HTTPError: On HTTP errors
+            requests.ConnectionError: On connection errors
+            requests.Timeout: On timeout
+        """
+        response = self.session.post(
+            self.api_url,
+            json=payload,
+            timeout=timeout
+        )
+
+        # Raise HTTPError for bad status codes (will be caught by retry decorator)
+        if response.status_code >= 400:
+            response.raise_for_status()
+
+        return response
+
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Optional[str]:
-        """Generate a response using Ollama."""
+        """Generate a response using Ollama with retry logic and rate limiting."""
         try:
+            # Apply rate limiting
+            OLLAMA_RATE_LIMITER.wait_if_needed()
+
             # Combine system and user prompts if system prompt provided
             full_prompt = prompt
             if system_prompt:
@@ -112,11 +217,9 @@ class OllamaClient(LLMClient):
             }
 
             logger.debug(f"Sending request to Ollama API with model {self.model}")
-            response = requests.post(
-                self.api_url,
-                json=payload,
-                timeout=120  # Longer timeout for local models
-            )
+
+            # Make API call with automatic retries
+            response = self._make_api_call(payload)
 
             if response.status_code == 200:
                 data = response.json()
@@ -127,14 +230,17 @@ class OllamaClient(LLMClient):
                 logger.error(f"Ollama API error: {response.status_code} - {response.text}")
                 return None
 
-        except requests.exceptions.ConnectionError:
-            logger.error(f"Cannot connect to Ollama at {self.base_url}. Is Ollama running?")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Cannot connect to Ollama at {self.base_url}. Is Ollama running? {str(e)}")
             return None
         except requests.exceptions.Timeout:
-            logger.error("Ollama API request timed out")
+            logger.error("Ollama API request timed out after retries")
+            return None
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"Ollama API HTTP error: {str(e)}")
             return None
         except Exception as e:
-            logger.error(f"Error calling Ollama API: {str(e)}", exc_info=True)
+            logger.error(f"Unexpected error calling Ollama API: {str(e)}", exc_info=True)
             return None
 
     def test_connection(self) -> Dict[str, Any]:

@@ -40,15 +40,27 @@ ShelfLife features a modular, maintainable architecture:
 ### Core Modules
 
 - `shelflife.py` - Streamlit UI and application entry point
-- `database.py` - Database operations with error handling and context managers
+- `database.py` - **UPDATED:** Database operations with backup/restore utilities
 - `book_service.py` - Book enhancement and LLM integration services
-- `llm_client.py` - LLM abstraction layer (Anthropic & Ollama support)
+- `llm_client.py` - **UPDATED:** LLM abstraction with retry logic and rate limiting
 - `models.py` - Data models with validation using dataclasses
 - `analytics.py` - Analytics generation and visualization functions
-- `api_utils.py` - External API integrations (Google Books, Open Library)
+- `api_utils.py` - **UPDATED:** External APIs with retry logic and rate limiting
+- `validation.py` - **NEW v2.0:** Input validation and sanitization
+- `network_utils.py` - **NEW v2.1:** Network resilience (retry, rate limiting, circuit breaker)
 - `logger.py` - Centralized logging system with file rotation
 - `constants.py` - Shared constants including genre lists and prompts
-- `config.py` - Configuration file for API keys and settings
+- `config.template.py` - **UPDATED v2.0:** Environment-based configuration template
+
+### Test Suite
+
+- `tests/test_validation.py` - **NEW v2.0:** Validation function tests
+- `tests/test_database.py` - **UPDATED v2.1:** Database operations + backup/restore tests
+- `tests/test_models.py` - **NEW v2.0:** Data model tests
+- `tests/test_llm_client.py` - **NEW v2.0:** LLM client abstraction tests
+- `tests/test_network_utils.py` - **NEW v2.1:** Network utilities tests (retry, rate limiting)
+- `tests/conftest.py` - **NEW v2.0:** Shared test fixtures
+- `pytest.ini` - **NEW v2.0:** Pytest configuration with coverage settings
 
 ### Static Assets
 
@@ -80,44 +92,62 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure LLM Provider
+### 2. Configure Environment (Secure Method)
 
-Copy the config template:
+**⚠️ IMPORTANT: Never commit API keys to version control!**
+
+Create a `.env` file from the example:
 ```bash
-cp config.template.py config.py
+cp .env.example .env
 ```
 
-Choose your LLM provider by editing `config.py`:
+Edit `.env` with your actual values:
+```bash
+# Choose your LLM provider
+LLM_PROVIDER=anthropic  # or 'ollama' for local
+
+# Anthropic Configuration (if using Anthropic)
+ANTHROPIC_API_KEY=sk-ant-your-actual-key-here
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+
+# Google Books API Key (optional but recommended)
+GOOGLE_BOOKS_API_KEY=your-google-books-api-key
+```
+
+**Security Notes:**
+- ✅ `.env` is already in `.gitignore` and won't be committed
+- ✅ Never share your `.env` file or commit it to version control
+- ✅ Configuration is automatically validated on startup
 
 #### Option A: Anthropic Claude (Recommended)
 
-```python
-LLM_PROVIDER = "anthropic"
-ANTHROPIC_API_KEY = "sk-ant-your-key-here"
-ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
-```
-
-Get an API key at [console.anthropic.com](https://console.anthropic.com/)
+1. Get an API key at [console.anthropic.com](https://console.anthropic.com/)
+2. Set in `.env`:
+   ```
+   LLM_PROVIDER=anthropic
+   ANTHROPIC_API_KEY=sk-ant-your-key-here
+   ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+   ```
 
 #### Option B: Ollama (Local, Free)
 
 1. Install Ollama from [ollama.ai](https://ollama.ai/)
 2. Pull a model: `ollama pull llama3.1`
-3. Configure in `config.py`:
-
-```python
-LLM_PROVIDER = "ollama"
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "llama3.1"
-```
+3. Set in `.env`:
+   ```
+   LLM_PROVIDER=ollama
+   OLLAMA_BASE_URL=http://localhost:11434
+   OLLAMA_MODEL=llama3.1
+   ```
 
 ### 3. Optional: Google Books API
 
-For enhanced metadata, get a free API key at [Google Books API](https://developers.google.com/books/docs/v1/using)
-
-```python
-GOOGLE_BOOKS_API_KEY = "your-google-books-api-key"
-```
+For enhanced metadata, get a free API key:
+1. Visit [Google Books API](https://developers.google.com/books/docs/v1/using)
+2. Add to `.env`:
+   ```
+   GOOGLE_BOOKS_API_KEY=your-google-books-api-key
+   ```
 
 ### 4. Run the Application
 
@@ -126,6 +156,23 @@ streamlit run shelflife.py
 ```
 
 Open your browser to `http://localhost:8501`
+
+### 5. Run Tests (Optional)
+
+Verify everything is working correctly:
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage report
+pytest --cov=. --cov-report=html
+
+# Run specific test file
+pytest tests/test_validation.py -v
+```
+
+View coverage report: `open htmlcov/index.html`
 
 ## LLM Provider Comparison
 
@@ -152,17 +199,47 @@ Open your browser to `http://localhost:8501`
 - Graceful degradation when APIs fail
 - User-friendly error messages
 
+### Security & Validation (NEW in v2.0)
+- ✅ **SQL Injection Protection:** Whitelisted sort columns with validation
+- ✅ **Secure Secrets Management:** Environment variables via `.env` files
+- ✅ **Input Validation:** Comprehensive validation for all user inputs
+- ✅ **Sanitization:** XSS prevention and injection attack mitigation
+- ✅ **Configuration Validation:** Automatic startup checks for required settings
+- ✅ **No Hardcoded Secrets:** Template-based configuration with examples
+
+### Testing & Quality (NEW in v2.0)
+- ✅ **Comprehensive Test Suite:** 150+ tests covering core functionality
+- ✅ **Unit Tests:** Validation, models, database, LLM client, network utilities
+- ✅ **Test Fixtures:** Shared fixtures for consistent testing
+- ✅ **Coverage Reporting:** Pytest with coverage tracking
+- ✅ **CI-Ready:** Tests can be integrated into GitHub Actions
+- 📊 **Target Coverage:** 40-50% currently, expanding to 70%+
+
+### Reliability & Resilience (NEW in v2.1)
+- ✅ **API Retry Logic:** Exponential backoff with configurable retries
+- ✅ **Rate Limiting:** Token bucket algorithm prevents API throttling
+- ✅ **Circuit Breaker:** Prevents cascading failures
+- ✅ **Database Backups:** Automated backup/restore with verification
+- ✅ **Health Checks:** Database integrity monitoring
+- ✅ **Error Recovery:** Automatic safety backups before destructive operations
+- ✅ **Network Resilience:** Session-based retry strategies for all external APIs
+
 ### LLM Flexibility
 - Support for both cloud (Anthropic) and local (Ollama) LLMs
 - Easy to add new LLM providers
 - Unified API across providers
 - Robust JSON parsing for various response formats
+- **NEW:** Automatic retry on transient failures
+- **NEW:** Rate limiting to prevent API throttling
+- **NEW:** Circuit breaker for service outages
 
-### Performance
-- Database connection pooling
-- Efficient query optimization
-- Caching for API responses
-- Batch processing for theme analysis
+### Performance & Reliability
+- Database connection pooling with context managers
+- Efficient query optimization with indexed columns
+- **NEW:** Automatic retry with exponential backoff
+- **NEW:** Rate limiting (50 req/min Anthropic, 30 req/min Google Books)
+- **NEW:** Database vacuum for space reclamation
+- Batch processing for theme analysis with chunking
 
 ## Usage
 
@@ -212,6 +289,70 @@ Open your browser to `http://localhost:8501`
 - Get insights about themes, authors, genres
 - Discover underrepresented areas
 - Get book recommendations based on mood or topic
+
+### Database Management (NEW in v2.1)
+
+ShelfLife now includes comprehensive database management utilities for data protection and maintenance.
+
+#### Creating Backups
+
+```python
+from database import Database
+
+db = Database()
+
+# Create automatic timestamped backup
+backup_path = db.backup_database()
+print(f"Backup created: {backup_path}")
+
+# Create backup with custom path
+db.backup_database("custom_backup.db")
+```
+
+#### Restoring from Backup
+
+```python
+# List available backups
+backups = db.list_backups()
+for backup in backups:
+    print(f"{backup['name']}: {backup['size_mb']} MB, {backup['created']}")
+
+# Restore from backup (requires confirmation for safety)
+db.restore_database("data/backups/database_backup_20241120_143022.db", confirm=True)
+```
+
+**Safety Features:**
+- Automatic safety backup created before restore
+- Confirmation required to prevent accidental data loss
+- Backup verification (size check)
+- Automatic rollback on restore failure
+
+#### Health Checks
+
+```python
+# Run database health check
+health = db.health_check()
+
+print(f"Accessible: {health['accessible']}")
+print(f"Total books: {health['total_books']}")
+print(f"Database size: {health['size_mb']} MB")
+print(f"Schema version: {health['schema_version']}")
+print(f"Last backup: {health['last_backup']}")
+print(f"Issues: {health['issues']}")
+```
+
+#### Database Maintenance
+
+```python
+# Vacuum database to reclaim space after deletions
+db.vacuum()
+```
+
+**Recommended Backup Schedule:**
+- Before major operations (bulk imports, updates)
+- Weekly for active collections
+- Before schema migrations
+- Before app upgrades
 
 ## Configuration
 

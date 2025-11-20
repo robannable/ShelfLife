@@ -1,7 +1,39 @@
+"""
+API utilities for fetching book metadata from external APIs.
+Includes retry logic and rate limiting for reliability.
+"""
 import requests
 import json
 from typing import Optional, Dict, Any
 import config
+from logger import get_logger
+from network_utils import (
+    retry_with_backoff,
+    RetryConfig,
+    create_session_with_retries,
+    RateLimiter
+)
+
+logger = get_logger(__name__)
+
+# Rate limiters for external APIs
+# Google Books: 1000 requests/day (conservative rate limit)
+# Open Library: No official limit, but be respectful
+GOOGLE_BOOKS_RATE_LIMITER = RateLimiter(calls_per_minute=30, burst_size=10)
+OPEN_LIBRARY_RATE_LIMITER = RateLimiter(calls_per_minute=60, burst_size=15)
+
+# Create sessions with retry logic
+google_books_session = create_session_with_retries(
+    max_retries=2,
+    backoff_factor=0.5,
+    status_forcelist=(429, 500, 502, 503, 504)
+)
+
+open_library_session = create_session_with_retries(
+    max_retries=2,
+    backoff_factor=0.5,
+    status_forcelist=(429, 500, 502, 503, 504)
+)
 
 def test_api_connection(api_name: str) -> Dict[str, bool]:
     """
@@ -85,29 +117,47 @@ def fetch_book_metadata(title: str, author: str, isbn: Optional[str] = None) -> 
     
     return metadata
 
+@retry_with_backoff(config=RetryConfig(max_retries=2))
 def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Fetch metadata from Open Library API.
+    Fetch metadata from Open Library API with retry logic and rate limiting.
+
+    Args:
+        title: Book title
+        author: Book author
+        isbn: Optional ISBN
+
+    Returns:
+        Dictionary with book metadata or None if not found
     """
     try:
+        # Apply rate limiting
+        OPEN_LIBRARY_RATE_LIMITER.wait_if_needed()
+
         # Try ISBN first if available
         if isbn:
-            response = requests.get(
-                f"{config.OPEN_LIBRARY_API_URL}?bibkeys=ISBN:{isbn}&format=json&jscmd=data"
+            logger.debug(f"Fetching from Open Library by ISBN: {isbn}")
+            response = open_library_session.get(
+                f"{config.OPEN_LIBRARY_API_URL}?bibkeys=ISBN:{isbn}&format=json&jscmd=data",
+                timeout=10
             )
             if response.status_code == 200 and response.json():
+                logger.info(f"Found book in Open Library by ISBN: {isbn}")
                 return parse_open_library_response(response.json())
-        
+
         # Fall back to search by title and author
         query = f"title:{title} author:{author}"
-        response = requests.get(
+        logger.debug(f"Searching Open Library: {query}")
+        response = open_library_session.get(
             config.OPEN_LIBRARY_SEARCH_URL,
-            params={"q": query, "limit": 1}
+            params={"q": query, "limit": 1},
+            timeout=10
         )
-        
+
         if response.status_code == 200:
             data = response.json()
             if data.get('docs'):
+                logger.info(f"Found book in Open Library: {title} by {author}")
                 return {
                     'title': data['docs'][0].get('title'),
                     'author': data['docs'][0].get('author_name', [author])[0],
@@ -116,37 +166,55 @@ def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None)
                     'isbn': data['docs'][0].get('isbn', [isbn])[0] if isbn else None,
                     'cover_url': f"https://covers.openlibrary.org/b/id/{data['docs'][0].get('cover_i')}-L.jpg" if data['docs'][0].get('cover_i') else None
                 }
-        
-        return None
-            
-    except Exception as e:
-        if config.DEBUG_MODE:
-            print(f"Open Library API error: {str(e)}")
+
+        logger.warning(f"Book not found in Open Library: {title} by {author}")
         return None
 
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Open Library API request error: {str(e)}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error fetching from Open Library: {str(e)}", exc_info=True)
+        return None
+
+@retry_with_backoff(config=RetryConfig(max_retries=2))
 def fetch_from_google_books(title: str, author: str, isbn: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Fetch metadata from Google Books API.
+    Fetch metadata from Google Books API with retry logic and rate limiting.
+
+    Args:
+        title: Book title
+        author: Book author
+        isbn: Optional ISBN
+
+    Returns:
+        Dictionary with book metadata or None if not found
     """
     try:
+        # Apply rate limiting
+        GOOGLE_BOOKS_RATE_LIMITER.wait_if_needed()
+
         # Construct search query
         query = f"intitle:{title} inauthor:{author}"
         if isbn:
             query = f"isbn:{isbn}"
-            
-        response = requests.get(
+
+        logger.debug(f"Searching Google Books: {query}")
+        response = google_books_session.get(
             config.GOOGLE_BOOKS_API_URL,
             params={
                 "q": query,
                 "key": config.GOOGLE_BOOKS_API_KEY,
                 "maxResults": 1
-            }
+            },
+            timeout=10
         )
-        
+
         if response.status_code == 200:
             data = response.json()
             if data.get('items'):
                 volume_info = data['items'][0]['volumeInfo']
+                logger.info(f"Found book in Google Books: {title} by {author}")
                 return {
                     'title': volume_info.get('title'),
                     'author': volume_info.get('authors', [author])[0],
@@ -158,12 +226,15 @@ def fetch_from_google_books(title: str, author: str, isbn: Optional[str] = None)
                     'page_count': volume_info.get('pageCount'),
                     'language': volume_info.get('language')
                 }
-        
+
+        logger.warning(f"Book not found in Google Books: {title} by {author}")
         return None
-            
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Google Books API request error: {str(e)}")
+        return None
     except Exception as e:
-        if config.DEBUG_MODE:
-            print(f"Google Books API error: {str(e)}")
+        logger.error(f"Unexpected error fetching from Google Books: {str(e)}", exc_info=True)
         return None
 
 def parse_open_library_response(data: Dict) -> Dict[str, Any]:

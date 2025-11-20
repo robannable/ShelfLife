@@ -26,6 +26,7 @@ from analytics import (
 from api_utils import test_api_connection
 from logger import get_logger, ShelfLifeLogger
 from constants import GENRE_CATEGORIES
+from validation import validate_book_input, validate_search_term, sanitize_string
 
 # Initialize logger
 ShelfLifeLogger().set_level(config.LOG_LEVEL)
@@ -302,8 +303,31 @@ def render_add_book_page(db: Database, book_service: BookService):
 
         submitted = st.form_submit_button("Add Book")
 
-        if submitted and title and author:
+        if submitted:
+            # Validate inputs
+            is_valid, validation_errors = validate_book_input(
+                title=title,
+                author=author,
+                year=year,
+                isbn=isbn,
+                publisher=publisher,
+                condition=condition,
+                personal_notes=personal_notes
+            )
+
+            if not is_valid:
+                st.error("**Validation Errors:**")
+                for error in validation_errors:
+                    st.error(f"• {error}")
+                return
+
             try:
+                # Sanitize inputs
+                title = sanitize_string(title, 500)
+                author = sanitize_string(author, 200)
+                if publisher:
+                    publisher = sanitize_string(publisher, 200)
+
                 with st.spinner("Fetching book information..."):
                     # Enhance book data with LLM
                     enhanced_metadata = book_service.enhance_book_data(title, author, year, isbn)
@@ -368,6 +392,14 @@ def render_view_collection_page(db: Database, book_service: BookService):
     # Search and filter options
     search = st.text_input("Search books", "")
     sort_by = st.selectbox("Sort by", ["Title", "Author", "Year", "Recent"])
+
+    # Validate search term
+    if search:
+        is_valid, error = validate_search_term(search)
+        if not is_valid:
+            st.error(f"Invalid search term: {error}")
+            return
+        search = sanitize_string(search, 200)
 
     # Get books
     try:
