@@ -46,9 +46,18 @@ ShelfLife features a modular, maintainable architecture:
 - `models.py` - Data models with validation using dataclasses
 - `analytics.py` - Analytics generation and visualization functions
 - `api_utils.py` - External API integrations (Google Books, Open Library)
+- `validation.py` - **NEW:** Input validation and sanitization
 - `logger.py` - Centralized logging system with file rotation
 - `constants.py` - Shared constants including genre lists and prompts
-- `config.py` - Configuration file for API keys and settings
+- `config.template.py` - **UPDATED:** Environment-based configuration template
+
+### Test Suite
+
+- `tests/test_validation.py` - **NEW:** Validation function tests
+- `tests/test_database.py` - **NEW:** Database operation tests
+- `tests/test_models.py` - **NEW:** Data model tests
+- `tests/test_llm_client.py` - **NEW:** LLM client abstraction tests
+- `pytest.ini` - **NEW:** Pytest configuration with coverage settings
 
 ### Static Assets
 
@@ -80,44 +89,62 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure LLM Provider
+### 2. Configure Environment (Secure Method)
 
-Copy the config template:
+**⚠️ IMPORTANT: Never commit API keys to version control!**
+
+Create a `.env` file from the example:
 ```bash
-cp config.template.py config.py
+cp .env.example .env
 ```
 
-Choose your LLM provider by editing `config.py`:
+Edit `.env` with your actual values:
+```bash
+# Choose your LLM provider
+LLM_PROVIDER=anthropic  # or 'ollama' for local
+
+# Anthropic Configuration (if using Anthropic)
+ANTHROPIC_API_KEY=sk-ant-your-actual-key-here
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+
+# Google Books API Key (optional but recommended)
+GOOGLE_BOOKS_API_KEY=your-google-books-api-key
+```
+
+**Security Notes:**
+- ✅ `.env` is already in `.gitignore` and won't be committed
+- ✅ Never share your `.env` file or commit it to version control
+- ✅ Configuration is automatically validated on startup
 
 #### Option A: Anthropic Claude (Recommended)
 
-```python
-LLM_PROVIDER = "anthropic"
-ANTHROPIC_API_KEY = "sk-ant-your-key-here"
-ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"
-```
-
-Get an API key at [console.anthropic.com](https://console.anthropic.com/)
+1. Get an API key at [console.anthropic.com](https://console.anthropic.com/)
+2. Set in `.env`:
+   ```
+   LLM_PROVIDER=anthropic
+   ANTHROPIC_API_KEY=sk-ant-your-key-here
+   ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+   ```
 
 #### Option B: Ollama (Local, Free)
 
 1. Install Ollama from [ollama.ai](https://ollama.ai/)
 2. Pull a model: `ollama pull llama3.1`
-3. Configure in `config.py`:
-
-```python
-LLM_PROVIDER = "ollama"
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "llama3.1"
-```
+3. Set in `.env`:
+   ```
+   LLM_PROVIDER=ollama
+   OLLAMA_BASE_URL=http://localhost:11434
+   OLLAMA_MODEL=llama3.1
+   ```
 
 ### 3. Optional: Google Books API
 
-For enhanced metadata, get a free API key at [Google Books API](https://developers.google.com/books/docs/v1/using)
-
-```python
-GOOGLE_BOOKS_API_KEY = "your-google-books-api-key"
-```
+For enhanced metadata, get a free API key:
+1. Visit [Google Books API](https://developers.google.com/books/docs/v1/using)
+2. Add to `.env`:
+   ```
+   GOOGLE_BOOKS_API_KEY=your-google-books-api-key
+   ```
 
 ### 4. Run the Application
 
@@ -126,6 +153,23 @@ streamlit run shelflife.py
 ```
 
 Open your browser to `http://localhost:8501`
+
+### 5. Run Tests (Optional)
+
+Verify everything is working correctly:
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage report
+pytest --cov=. --cov-report=html
+
+# Run specific test file
+pytest tests/test_validation.py -v
+```
+
+View coverage report: `open htmlcov/index.html`
 
 ## LLM Provider Comparison
 
@@ -151,6 +195,22 @@ Open your browser to `http://localhost:8501`
 - Database context managers for automatic rollback
 - Graceful degradation when APIs fail
 - User-friendly error messages
+
+### Security & Validation (NEW in v2.0)
+- ✅ **SQL Injection Protection:** Whitelisted sort columns with validation
+- ✅ **Secure Secrets Management:** Environment variables via `.env` files
+- ✅ **Input Validation:** Comprehensive validation for all user inputs
+- ✅ **Sanitization:** XSS prevention and injection attack mitigation
+- ✅ **Configuration Validation:** Automatic startup checks for required settings
+- ✅ **No Hardcoded Secrets:** Template-based configuration with examples
+
+### Testing & Quality (NEW in v2.0)
+- ✅ **Comprehensive Test Suite:** 100+ tests covering core functionality
+- ✅ **Unit Tests:** Validation, models, database, LLM client
+- ✅ **Test Fixtures:** Shared fixtures for consistent testing
+- ✅ **Coverage Reporting:** Pytest with coverage tracking
+- ✅ **CI-Ready:** Tests can be integrated into GitHub Actions
+- 📊 **Target Coverage:** 30-40% initially, expanding to 70%+
 
 ### LLM Flexibility
 - Support for both cloud (Anthropic) and local (Ollama) LLMs

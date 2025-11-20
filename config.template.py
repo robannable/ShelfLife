@@ -1,31 +1,64 @@
+"""
+Configuration management for ShelfLife application.
+Uses environment variables for sensitive data with fallbacks for development.
+"""
+import os
+from pathlib import Path
+from typing import Optional
+
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    env_path = Path('.') / '.env'
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+except ImportError:
+    # python-dotenv not installed, continue with environment variables only
+    pass
+
+def get_env_or_raise(key: str, default: Optional[str] = None) -> str:
+    """Get environment variable or raise error if not found and no default."""
+    value = os.getenv(key, default)
+    if value is None:
+        raise ValueError(
+            f"Required environment variable '{key}' is not set. "
+            f"Please set it in your .env file or environment."
+        )
+    return value
+
+def get_env_bool(key: str, default: bool = False) -> bool:
+    """Get boolean environment variable."""
+    value = os.getenv(key, str(default)).lower()
+    return value in ('true', '1', 'yes', 'on')
+
 # LLM Provider Configuration
 # Choose 'anthropic' or 'ollama'
-LLM_PROVIDER = "anthropic"  # or "ollama" for local models
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic").lower()
 
 # Anthropic Configuration (if using Anthropic)
-ANTHROPIC_API_KEY = "your_anthropic_api_key_here"
-ANTHROPIC_MODEL = "claude-3-5-sonnet-20241022"  # or "claude-3-opus-20240229", etc.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 
 # Ollama Configuration (if using Ollama)
-OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "llama3.1"  # or any model you have installed
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 
 # Google Books API Key (for metadata enhancement)
-GOOGLE_BOOKS_API_KEY = "your_google_books_api_key_here"
+GOOGLE_BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY", "")
 
 # Database configuration
-DB_PATH = "data/database.db"
+DB_PATH = os.getenv("DB_PATH", "data/database.db")
 
 # API endpoints
 GOOGLE_BOOKS_API_URL = "https://www.googleapis.com/books/v1/volumes"
 
 # Cache settings
-CACHE_EXPIRY = 86400  # 24 hours in seconds
+CACHE_EXPIRY = int(os.getenv("CACHE_EXPIRY", "86400"))  # 24 hours in seconds
 
 # Image settings
-MAX_IMAGE_SIZE = 800  # pixels
+MAX_IMAGE_SIZE = int(os.getenv("MAX_IMAGE_SIZE", "800"))  # pixels
 ALLOWED_IMAGE_TYPES = ['.jpg', '.jpeg', '.png']
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", str(5 * 1024 * 1024)))  # 5MB
 
 # Enhanced analysis prompt for LLM
 BOOK_ANALYSIS_PROMPT = """Analyze the following book and return a JSON object with comprehensive metadata.
@@ -123,8 +156,8 @@ GOOGLE_BOOKS_MAX_RESULTS = 1
 GOOGLE_BOOKS_FIELDS = "items(volumeInfo(title,authors,publishedDate,description,imageLinks,categories,pageCount,language))"
 
 # Debug and logging
-DEBUG_MODE = True
-LOG_LEVEL = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+DEBUG_MODE = get_env_bool("DEBUG_MODE", True)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 # API Test endpoints
 API_TEST_ENDPOINTS = {
@@ -139,3 +172,42 @@ API_TEST_ENDPOINTS = {
         "params": {"q": "test"}
     }
 }
+
+# Configuration validation
+def validate_config() -> None:
+    """
+    Validate configuration on application startup.
+    Raises ValueError if required configuration is missing or invalid.
+    """
+    errors = []
+
+    # Validate LLM provider configuration
+    if LLM_PROVIDER not in ["anthropic", "ollama"]:
+        errors.append(f"Invalid LLM_PROVIDER: '{LLM_PROVIDER}'. Must be 'anthropic' or 'ollama'")
+
+    if LLM_PROVIDER == "anthropic":
+        if not ANTHROPIC_API_KEY:
+            errors.append("ANTHROPIC_API_KEY is required when using Anthropic provider")
+
+    # Validate log level
+    valid_log_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    if LOG_LEVEL.upper() not in valid_log_levels:
+        errors.append(f"Invalid LOG_LEVEL: '{LOG_LEVEL}'. Must be one of {valid_log_levels}")
+
+    # Note: Google Books API key is optional (APIs work without it, but with rate limits)
+    if not GOOGLE_BOOKS_API_KEY and DEBUG_MODE:
+        print("WARNING: GOOGLE_BOOKS_API_KEY is not set. API requests may be rate-limited.")
+
+    if errors:
+        error_message = "Configuration validation failed:\n" + "\n".join(f"  - {err}" for err in errors)
+        raise ValueError(error_message)
+
+# Validate on import (can be disabled by setting SKIP_CONFIG_VALIDATION=1)
+if not get_env_bool("SKIP_CONFIG_VALIDATION", False):
+    try:
+        validate_config()
+    except ValueError as e:
+        # Print error but don't crash on import - let the application handle it
+        if DEBUG_MODE:
+            print(f"\n⚠️  Configuration Error:\n{e}\n")
+            print("Set SKIP_CONFIG_VALIDATION=1 to bypass this check (not recommended)\n")

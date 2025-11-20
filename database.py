@@ -221,12 +221,19 @@ class Database:
                     query += ' WHERE title LIKE ? OR author LIKE ?'
                     params.extend([f'%{search_term}%', f'%{search_term}%'])
 
-                sort_column = {
+                # Whitelist of allowed sort columns to prevent SQL injection
+                ALLOWED_SORT_COLUMNS = {
                     "Title": "title",
                     "Author": "author",
                     "Year": "year",
                     "Recent": "created_at"
-                }.get(sort_by, "title")
+                }
+
+                # Validate and sanitize sort column
+                sort_column = ALLOWED_SORT_COLUMNS.get(sort_by)
+                if not sort_column:
+                    logger.warning(f"Invalid sort_by value: {sort_by}. Defaulting to 'title'")
+                    sort_column = "title"
 
                 if sort_column == "created_at":
                     query += ' ORDER BY created_at DESC'
@@ -237,8 +244,11 @@ class Database:
                 logger.debug(f"Search returned {len(results)} books")
                 return results
 
+        except sqlite3.Error as e:
+            logger.error(f"Database error while searching books: {str(e)}", exc_info=True)
+            raise DatabaseError(f"Failed to search books: {str(e)}")
         except Exception as e:
-            logger.error(f"Failed to search books: {str(e)}", exc_info=True)
+            logger.error(f"Unexpected error while searching books: {str(e)}", exc_info=True)
             raise DatabaseError(f"Failed to search books: {str(e)}")
 
     def get_all_books(self) -> List[Tuple]:
