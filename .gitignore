@@ -2,20 +2,37 @@
 venv/
 env/
 myenv/
+.venv/
+ENV/
 
 # Python cache files
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
 
 # Database files
 *.db
 *.sqlite3
-data/*.db
-data/*.sqlite3
+*.db-journal
+*.db-shm
+*.db-wal
 
 # Environment variables and secrets
 .env
+.env.local
+.env.*.local
 config.py  # Ignore the actual config file
 !config.template.py  # But allow the template
 
@@ -24,26 +41,55 @@ config.py  # Ignore the actual config file
 .idea/
 *.swp
 *.swo
+*~
+.project
+.pydevproject
+.settings/
 
 # Operating System files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+Desktop.ini
 
 # Distribution / packaging
 dist/
 build/
 *.egg-info/
 .eggs/
-setup.cfg 
+*.egg
+MANIFEST
+develop-eggs/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
 
-# Data files
+# Data files and logs
 data/
-data/*.json 
-
-# Exclude compiled CSS
-static/*.css.map
-config.py
+*.log
+logs/
 
 # Backup files
 *_old.py
 *.backup
+*.bak
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Streamlit
+.streamlit/secrets.toml
