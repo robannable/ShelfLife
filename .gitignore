@@ -93,3 +93,4 @@ logs/
 
 # Streamlit
 .streamlit/secrets.toml
+config.py
