@@ -1,6 +1,6 @@
 """
 ShelfLife - Intelligent Library Cataloging System
-Refactored version with modular architecture and improved error handling.
+Enhanced UI/UX version with modern design patterns.
 """
 import streamlit as st
 import json
@@ -11,6 +11,8 @@ from PIL import Image
 import io
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
+import time
 
 # Import our modules
 import config
@@ -32,6 +34,41 @@ from validation import validate_book_input, validate_search_term, sanitize_strin
 ShelfLifeLogger().set_level(config.LOG_LEVEL)
 logger = get_logger(__name__)
 
+# Custom color palette for charts
+CHART_COLORS = [
+    '#6366F1',  # Primary indigo
+    '#8B5CF6',  # Purple
+    '#EC4899',  # Pink
+    '#F59E0B',  # Amber
+    '#10B981',  # Emerald
+    '#3B82F6',  # Blue
+    '#EF4444',  # Red
+    '#14B8A6',  # Teal
+    '#F97316',  # Orange
+    '#84CC16',  # Lime
+]
+
+# Navigation items with icons
+NAV_ITEMS = [
+    {"icon": "plus-circle", "label": "Add Book", "emoji": "➕"},
+    {"icon": "library", "label": "View Collection", "emoji": "📚"},
+    {"icon": "bar-chart", "label": "Analytics", "emoji": "📊"},
+    {"icon": "share-2", "label": "Network View", "emoji": "🔗"},
+    {"icon": "file-text", "label": "Executive Summary", "emoji": "📋"},
+    {"icon": "message-circle", "label": "Ask the Library", "emoji": "💬"},
+]
+
+# Condition badge mapping
+CONDITION_BADGES = {
+    "New": ("badge-new", "Mint"),
+    "Like New": ("badge-new", "Like New"),
+    "Very Good": ("badge-good", "Very Good"),
+    "Good": ("badge-good", "Good"),
+    "Fair": ("badge-fair", "Fair"),
+    "Poor": ("badge-poor", "Poor"),
+}
+
+
 # Initialize services (singleton pattern using session state)
 @st.cache_resource
 def get_database():
@@ -43,6 +80,7 @@ def get_database():
         st.error(f"Database initialization failed: {str(e)}")
         st.stop()
 
+
 @st.cache_resource
 def get_book_service():
     """Get or create book service instance."""
@@ -52,6 +90,62 @@ def get_book_service():
         logger.error(f"Failed to initialize book service: {str(e)}", exc_info=True)
         st.error(f"Book service initialization failed. Check your LLM configuration: {str(e)}")
         st.stop()
+
+
+# ==================== UI HELPER FUNCTIONS ====================
+
+def render_page_header(title: str, subtitle: str = None, icon: str = None):
+    """Render a styled page header."""
+    icon_html = f'<span style="margin-right: 12px;">{icon}</span>' if icon else ''
+    subtitle_html = f'<p>{subtitle}</p>' if subtitle else ''
+
+    st.markdown(f'''
+        <div class="app-header">
+            <h1>{icon_html}{title}</h1>
+            {subtitle_html}
+        </div>
+    ''', unsafe_allow_html=True)
+
+
+def render_empty_state(icon: str, title: str, message: str, show_button: bool = False, button_label: str = ""):
+    """Render an empty state component."""
+    st.markdown(f'''
+        <div class="empty-state">
+            <div class="empty-state-icon">{icon}</div>
+            <h3>{title}</h3>
+            <p>{message}</p>
+        </div>
+    ''', unsafe_allow_html=True)
+
+    if show_button:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            return st.button(button_label, use_container_width=True)
+    return False
+
+
+def render_condition_badge(condition: str) -> str:
+    """Return HTML for a condition badge."""
+    badge_class, label = CONDITION_BADGES.get(condition, ("badge-fair", condition))
+    return f'<span class="badge {badge_class}">{label}</span>'
+
+
+def render_tags(items: list, tag_class: str = "tag") -> str:
+    """Render a list of items as tags."""
+    if not items:
+        return ""
+    return " ".join([f'<span class="{tag_class}">{item}</span>' for item in items])
+
+
+def simulate_progress(message: str, duration: float = 2.0):
+    """Show a progress bar that simulates work being done."""
+    progress_bar = st.progress(0, text=message)
+    steps = 20
+    for i in range(steps):
+        time.sleep(duration / steps)
+        progress_bar.progress((i + 1) / steps, text=message)
+    progress_bar.empty()
+
 
 # Image processing helper
 def process_image(uploaded_file):
@@ -88,6 +182,7 @@ def process_image(uploaded_file):
         st.error("Error processing image. Please ensure it's a valid image file.")
         return None
 
+
 # Helper functions for library operations
 def generate_library_json(db: Database):
     """Generate a simple JSON file with book titles and authors."""
@@ -116,6 +211,7 @@ def generate_library_json(db: Database):
     except Exception as e:
         logger.error(f"Error generating library JSON: {str(e)}", exc_info=True)
         raise
+
 
 def find_related_books(db: Database, current_book_id: int, metadata: dict):
     """Find up to 3 related books based on shared genres."""
@@ -153,22 +249,23 @@ def find_related_books(db: Database, current_book_id: int, metadata: dict):
         logger.error(f"Error finding related books: {str(e)}", exc_info=True)
         return []
 
+
 def display_theme_analysis(theme_analysis: dict):
     """Display the theme analysis in an organized way."""
     if "analysis" in theme_analysis:
-        st.write("### 📚 Thematic Overview")
+        st.markdown("### Thematic Overview")
         st.write(theme_analysis['analysis'].get('summary', ''))
 
         if theme_analysis['analysis'].get('key_insights'):
-            st.write("#### Key Insights")
+            st.markdown("#### Key Insights")
             for insight in theme_analysis['analysis']['key_insights']:
-                st.markdown(f"• {insight}")
+                st.markdown(f"- {insight}")
 
-    st.write("### 🎯 Thematic Groups")
+    st.markdown("### Thematic Groups")
 
     theme_names = [theme['name'] for theme in theme_analysis.get('uber_themes', [])]
     if not theme_names:
-        st.info("No theme groups available.")
+        st.info("No theme groups available yet.")
         return
 
     selected_theme = st.selectbox(
@@ -196,9 +293,11 @@ def display_theme_analysis(theme_analysis: dict):
             if sub_themes_data:
                 st.write("**Related Themes:**")
                 df = pd.DataFrame(sub_themes_data)
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df, use_container_width=True, hide_index=True)
 
-# Main application
+
+# ==================== MAIN APPLICATION ====================
+
 def main():
     """Main application entry point."""
 
@@ -206,7 +305,8 @@ def main():
     st.set_page_config(
         page_title="ShelfLife",
         page_icon="📚",
-        layout="centered"
+        layout="centered",
+        initial_sidebar_state="expanded"
     )
 
     # Load CSS
@@ -224,14 +324,50 @@ def main():
     db = get_database()
     book_service = get_book_service()
 
+    # Initialize session state
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = "Add Book"
+    if 'delete_confirm' not in st.session_state:
+        st.session_state.delete_confirm = None
+    if 'show_success' not in st.session_state:
+        st.session_state.show_success = None
+
     # Sidebar
     with st.sidebar:
-        st.title("ShelfLife 📚")
+        # Logo and title
+        st.markdown('''
+            <div style="text-align: center; padding: 1rem 0 1.5rem 0;">
+                <div style="font-size: 3rem; margin-bottom: 0.5rem;">📚</div>
+                <h1 style="margin: 0; font-size: 1.75rem; font-weight: 700;">ShelfLife</h1>
+                <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; opacity: 0.8;">Intelligent Library Cataloging</p>
+            </div>
+        ''', unsafe_allow_html=True)
+
+        st.divider()
+
+        # Navigation
+        st.markdown('<p style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; margin-bottom: 0.75rem;">Navigation</p>', unsafe_allow_html=True)
+
+        for item in NAV_ITEMS:
+            is_active = st.session_state.current_page == item["label"]
+            button_label = f"{item['emoji']}  {item['label']}"
+
+            if st.button(
+                button_label,
+                key=f"nav_{item['label']}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary"
+            ):
+                st.session_state.current_page = item["label"]
+                st.rerun()
+
+        st.divider()
 
         # API Status Section
-        st.subheader("API Status")
-        if st.button("Check API Status"):
-            with st.spinner("Checking API connections..."):
+        st.markdown('<p style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; margin-bottom: 0.75rem;">System Status</p>', unsafe_allow_html=True)
+
+        if st.button("🔍 Check API Status", use_container_width=True):
+            with st.spinner("Checking connections..."):
                 # Check LLM
                 llm_status = book_service.test_connection()
                 st.write(f"{config.LLM_PROVIDER.title()} LLM:",
@@ -255,15 +391,22 @@ def main():
                     if not ol_status["success"]:
                         st.error(f"Open Library: {ol_status.get('error', 'Unknown')}")
 
-        # Navigation
-        st.subheader("Navigation")
-        page = st.selectbox(
-            "Select Page",
-            ["Add Book", "View Collection", "Analytics", "Network View",
-             "Executive Summary", "Ask the Library"]
-        )
+        # Library stats
+        try:
+            books = db.get_all_books()
+            book_count = len(books) if books else 0
+            st.markdown(f'''
+                <div style="background: rgba(255,255,255,0.1); border-radius: 8px; padding: 1rem; margin-top: 1rem; text-align: center;">
+                    <div style="font-size: 1.5rem; font-weight: 700;">{book_count}</div>
+                    <div style="font-size: 0.75rem; opacity: 0.8;">Books in Library</div>
+                </div>
+            ''', unsafe_allow_html=True)
+        except Exception:
+            pass
 
     # Main content area
+    page = st.session_state.current_page
+
     if page == "Add Book":
         render_add_book_page(db, book_service)
     elif page == "View Collection":
@@ -277,121 +420,253 @@ def main():
     elif page == "Ask the Library":
         render_ask_library_page(db, book_service)
 
+
+# ==================== PAGE RENDERERS ====================
+
 def render_add_book_page(db: Database, book_service: BookService):
     """Render the Add Book page."""
-    st.header("Add New Book")
+    render_page_header(
+        "Add New Book",
+        "Enter basic details and let AI enhance your book's metadata",
+        "➕"
+    )
 
-    with st.form("book_form"):
-        title = st.text_input("Title*")
-        author = st.text_input("Author*")
-        year = st.number_input("Year",
-            min_value=0,
-            max_value=datetime.now().year,
-            value=None)
-        year = year if year != 0 else None
-        isbn = st.text_input("ISBN (optional)")
-        publisher = st.text_input("Publisher (optional)")
-        condition = st.selectbox("Condition",
-            ["New", "Like New", "Very Good", "Good", "Fair", "Poor"])
-        cover_image = st.file_uploader("Cover Image", type=['png', 'jpg', 'jpeg'])
+    # Show success message if set
+    if st.session_state.show_success:
+        st.success(st.session_state.show_success)
+        st.session_state.show_success = None
 
-        personal_notes = st.text_area(
-            "Personal Notes",
-            placeholder="Add your personal thoughts, reading status, annotations, or any other notes about this book...",
-            help="These notes are private and won't be used in analytics or summaries"
-        )
+    # Two-column layout for the form
+    col1, col2 = st.columns([3, 2])
 
-        submitted = st.form_submit_button("Add Book")
+    with col1:
+        st.markdown("#### Book Details")
 
-        if submitted:
-            # Validate inputs
-            is_valid, validation_errors = validate_book_input(
-                title=title,
-                author=author,
-                year=year,
-                isbn=isbn,
-                publisher=publisher,
-                condition=condition,
-                personal_notes=personal_notes
+        with st.form("book_form", clear_on_submit=True):
+            # Required fields
+            st.markdown("**Required Information**")
+            title = st.text_input(
+                "Title",
+                placeholder="Enter the book title",
+                help="The full title of the book"
+            )
+            author = st.text_input(
+                "Author",
+                placeholder="Enter the author's name",
+                help="The primary author of the book"
             )
 
-            if not is_valid:
-                st.error("**Validation Errors:**")
-                for error in validation_errors:
-                    st.error(f"• {error}")
-                return
+            st.markdown("---")
+            st.markdown("**Optional Information**")
 
-            try:
-                # Sanitize inputs
-                title = sanitize_string(title, 500)
-                author = sanitize_string(author, 200)
-                if publisher:
-                    publisher = sanitize_string(publisher, 200)
+            col_a, col_b = st.columns(2)
+            with col_a:
+                year = st.number_input(
+                    "Publication Year",
+                    min_value=0,
+                    max_value=datetime.now().year,
+                    value=None,
+                    placeholder="e.g., 1984",
+                    help="Year the book was published"
+                )
+                year = year if year != 0 else None
 
-                with st.spinner("Fetching book information..."):
-                    # Enhance book data with LLM
+                condition = st.selectbox(
+                    "Condition",
+                    ["New", "Like New", "Very Good", "Good", "Fair", "Poor"],
+                    help="Physical condition of your copy"
+                )
+
+            with col_b:
+                isbn = st.text_input(
+                    "ISBN",
+                    placeholder="e.g., 978-0-123456-78-9",
+                    help="10 or 13 digit ISBN (optional)"
+                )
+                publisher = st.text_input(
+                    "Publisher",
+                    placeholder="e.g., Penguin Books",
+                    help="Publishing house (optional)"
+                )
+
+            st.markdown("---")
+
+            cover_image = st.file_uploader(
+                "Cover Image",
+                type=['png', 'jpg', 'jpeg'],
+                help="Upload a photo of the book cover (optional)"
+            )
+
+            personal_notes = st.text_area(
+                "Personal Notes",
+                placeholder="Add your thoughts, reading status, annotations, or any personal notes about this book...",
+                help="These notes are private and won't be used in analytics or summaries",
+                height=100
+            )
+
+            # Submit button with better styling
+            submitted = st.form_submit_button(
+                "✨ Add Book & Enhance Metadata",
+                use_container_width=True,
+                type="primary"
+            )
+
+            if submitted:
+                # Validate inputs
+                is_valid, validation_errors = validate_book_input(
+                    title=title,
+                    author=author,
+                    year=year,
+                    isbn=isbn,
+                    publisher=publisher,
+                    condition=condition,
+                    personal_notes=personal_notes
+                )
+
+                if not is_valid:
+                    st.error("**Please fix the following errors:**")
+                    for error in validation_errors:
+                        st.error(f"• {error}")
+                    return
+
+                try:
+                    # Sanitize inputs
+                    title = sanitize_string(title, 500)
+                    author = sanitize_string(author, 200)
+                    if publisher:
+                        publisher = sanitize_string(publisher, 200)
+
+                    # Show progress
+                    progress_text = "Enhancing book metadata with AI..."
+                    progress_bar = st.progress(0, text=progress_text)
+
+                    # Step 1: Fetching from APIs
+                    progress_bar.progress(20, text="Searching book databases...")
+
+                    # Step 2: AI Enhancement
+                    progress_bar.progress(40, text="Analyzing with AI...")
                     enhanced_metadata = book_service.enhance_book_data(title, author, year, isbn)
 
-                if enhanced_metadata:
-                    # Process cover image
-                    image_data = process_image(cover_image) if cover_image else None
+                    progress_bar.progress(70, text="Processing cover image...")
 
-                    # Create book object
-                    book = Book(
-                        title=title,
-                        author=author,
-                        year=year,
-                        isbn=isbn,
-                        publisher=publisher,
-                        condition=condition,
-                        cover_image=image_data,
-                        metadata=enhanced_metadata,
-                        personal_notes=personal_notes
-                    )
+                    if enhanced_metadata:
+                        # Process cover image
+                        image_data = process_image(cover_image) if cover_image else None
 
-                    # Add to database
-                    book_id = db.add_book(book)
-                    st.success(f"Book added successfully! (ID: {book_id})")
-                    logger.info(f"Added book: {title} by {author} (ID: {book_id})")
-                else:
-                    st.error("Failed to fetch book information. Please try again.")
+                        progress_bar.progress(85, text="Saving to database...")
 
-            except ValueError as e:
-                st.error(f"Validation error: {str(e)}")
-            except DatabaseError as e:
-                st.error(f"Database error: {str(e)}")
-            except Exception as e:
-                logger.error(f"Error adding book: {str(e)}", exc_info=True)
-                st.error("An unexpected error occurred. Please try again.")
+                        # Create book object
+                        book = Book(
+                            title=title,
+                            author=author,
+                            year=year,
+                            isbn=isbn,
+                            publisher=publisher,
+                            condition=condition,
+                            cover_image=image_data,
+                            metadata=enhanced_metadata,
+                            personal_notes=personal_notes
+                        )
+
+                        # Add to database
+                        book_id = db.add_book(book)
+                        progress_bar.progress(100, text="Complete!")
+                        time.sleep(0.5)
+                        progress_bar.empty()
+
+                        st.session_state.show_success = f"'{title}' by {author} has been added to your library! (ID: {book_id})"
+                        logger.info(f"Added book: {title} by {author} (ID: {book_id})")
+                        st.rerun()
+                    else:
+                        progress_bar.empty()
+                        st.error("Failed to fetch book information. Please try again.")
+
+                except ValueError as e:
+                    st.error(f"Validation error: {str(e)}")
+                except DatabaseError as e:
+                    st.error(f"Database error: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error adding book: {str(e)}", exc_info=True)
+                    st.error("An unexpected error occurred. Please try again.")
+
+    with col2:
+        st.markdown("#### How It Works")
+        st.markdown('''
+            <div style="background: #F3F4F6; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem;">
+                <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+                    <span style="background: #6366F1; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 0.875rem;">1</span>
+                    <div>
+                        <strong>Enter Basic Info</strong>
+                        <p style="margin: 0; font-size: 0.875rem; color: #6B7280;">Just title and author are required</p>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+                    <span style="background: #6366F1; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 0.875rem;">2</span>
+                    <div>
+                        <strong>AI Enhancement</strong>
+                        <p style="margin: 0; font-size: 0.875rem; color: #6B7280;">We fetch synopsis, themes, genres & more</p>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <span style="background: #6366F1; color: white; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 0.875rem;">3</span>
+                    <div>
+                        <strong>Discover Connections</strong>
+                        <p style="margin: 0; font-size: 0.875rem; color: #6B7280;">Find related books & explore themes</p>
+                    </div>
+                </div>
+            </div>
+        ''', unsafe_allow_html=True)
+
+        st.markdown("#### Data Sources")
+        st.markdown('''
+            - **Google Books API** - Cover images, publication info
+            - **Open Library** - Additional metadata
+            - **AI Analysis** - Synopsis, themes, genres, historical context
+        ''')
+
 
 def render_view_collection_page(db: Database, book_service: BookService):
     """Render the View Collection page."""
-    st.header("Your Library")
+    render_page_header(
+        "Your Library",
+        "Browse, search, and manage your book collection",
+        "📚"
+    )
 
-    # Export button
-    with st.container():
-        col1, col2 = st.columns([1, 4])
-        with col1:
-            if st.button("📥 Export to CSV"):
-                try:
-                    books = db.get_all_books()
-                    csv_path = export_library_to_csv(books)
-                    with open(csv_path, 'r', encoding='utf-8') as f:
-                        csv_data = f.read()
-                        st.download_button(
-                            label="Download CSV",
-                            data=csv_data,
-                            file_name="library_export.csv",
-                            mime="text/csv"
-                        )
-                    st.success("CSV file generated successfully!")
-                except Exception as e:
-                    logger.error(f"Error generating CSV: {str(e)}", exc_info=True)
-                    st.error("Error generating CSV file")
+    # Top action bar
+    col1, col2, col3 = st.columns([2, 3, 2])
 
-    # Search and filter options
-    search = st.text_input("Search books", "")
-    sort_by = st.selectbox("Sort by", ["Title", "Author", "Year", "Recent"])
+    with col1:
+        if st.button("📥 Export to CSV", use_container_width=True):
+            try:
+                books = db.get_all_books()
+                csv_path = export_library_to_csv(books)
+                with open(csv_path, 'r', encoding='utf-8') as f:
+                    csv_data = f.read()
+                st.download_button(
+                    label="⬇️ Download CSV",
+                    data=csv_data,
+                    file_name="library_export.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            except Exception as e:
+                logger.error(f"Error generating CSV: {str(e)}", exc_info=True)
+                st.error("Error generating CSV file")
+
+    with col2:
+        search = st.text_input(
+            "Search",
+            placeholder="🔍 Search by title, author, or genre...",
+            label_visibility="collapsed"
+        )
+
+    with col3:
+        sort_by = st.selectbox(
+            "Sort by",
+            ["Recent", "Title", "Author", "Year"],
+            label_visibility="collapsed"
+        )
 
     # Validate search term
     if search:
@@ -401,120 +676,177 @@ def render_view_collection_page(db: Database, book_service: BookService):
             return
         search = sanitize_string(search, 200)
 
+    st.markdown("---")
+
     # Get books
     try:
         books = db.search_books(search, sort_by)
 
         if not books:
-            st.info("No books found. Add some books to get started!")
+            if search:
+                render_empty_state(
+                    "🔍",
+                    "No Results Found",
+                    f"No books match '{search}'. Try a different search term."
+                )
+            else:
+                if render_empty_state(
+                    "📚",
+                    "Your Library is Empty",
+                    "Start building your collection by adding your first book!",
+                    show_button=True,
+                    button_label="➕ Add Your First Book"
+                ):
+                    st.session_state.current_page = "Add Book"
+                    st.rerun()
             return
+
+        # Show result count
+        st.markdown(f"**{len(books)}** book{'s' if len(books) != 1 else ''} in your library")
 
         # Display books
         for book in books:
-            with st.expander(f"{book[1]} by {book[2]}"):
+            book_id = book[0]
+
+            # Check for delete confirmation
+            if st.session_state.delete_confirm == book_id:
+                st.warning(f"⚠️ **Delete '{book[1]}'?** This action cannot be undone.")
+                col_yes, col_no, col_spacer = st.columns([1, 1, 3])
+                with col_yes:
+                    if st.button("🗑️ Yes, Delete", key=f"confirm_del_{book_id}", type="primary"):
+                        try:
+                            db.delete_book(book_id)
+                            st.session_state.delete_confirm = None
+                            st.success(f"'{book[1]}' has been deleted.")
+                            time.sleep(0.5)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error deleting book: {str(e)}")
+                with col_no:
+                    if st.button("Cancel", key=f"cancel_del_{book_id}"):
+                        st.session_state.delete_confirm = None
+                        st.rerun()
+                continue
+
+            with st.expander(f"**{book[1]}** by {book[2]}", expanded=False):
                 col1, col2 = st.columns([1, 2])
 
                 with col1:
                     # Display cover image
                     if book[7]:  # Local cover image
                         try:
-                            st.image(book[7], caption="Cover Image")
+                            st.image(book[7], use_container_width=True)
                         except Exception as e:
                             logger.warning(f"Error displaying cover image: {str(e)}")
-                            st.info("Cover image not available")
+                            st.markdown('<div style="background: #F3F4F6; height: 200px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: #9CA3AF;">No Cover</div>', unsafe_allow_html=True)
                     elif book[8]:  # Check metadata for cover URL
                         try:
                             metadata = json.loads(book[8])
                             if 'cover_url' in metadata and metadata['cover_url']:
-                                st.image(metadata['cover_url'], caption="Cover Image")
+                                st.image(metadata['cover_url'], use_container_width=True)
+                            else:
+                                st.markdown('<div style="background: #F3F4F6; height: 200px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: #9CA3AF;">No Cover</div>', unsafe_allow_html=True)
                         except Exception:
-                            pass
+                            st.markdown('<div style="background: #F3F4F6; height: 200px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: #9CA3AF;">No Cover</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown('<div style="background: #F3F4F6; height: 200px; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: #9CA3AF;">No Cover</div>', unsafe_allow_html=True)
+
+                    # Condition badge
+                    condition = book[6] if book[6] else "Unknown"
+                    st.markdown(f"**Condition:** {render_condition_badge(condition)}", unsafe_allow_html=True)
 
                     # Basic information
-                    st.write("**Basic Information**")
-                    st.write(f"**Title:** {book[1]}")
-                    st.write(f"**Author:** {book[2]}")
-                    st.write(f"**Year:** {book[3] if book[3] else 'Unknown'}")
-                    st.write(f"**ISBN:** {book[4] if book[4] else 'N/A'}")
-                    st.write(f"**Publisher:** {book[5] if book[5] else 'Unknown'}")
-                    st.write(f"**Condition:** {book[6]}")
-                    st.write(f"**Added:** {book[9][:10] if book[9] else 'N/A'}")
+                    st.markdown("---")
+                    st.markdown(f"**Year:** {book[3] if book[3] else 'Unknown'}")
+                    st.markdown(f"**ISBN:** {book[4] if book[4] else 'N/A'}")
+                    st.markdown(f"**Publisher:** {book[5] if book[5] else 'Unknown'}")
+                    st.markdown(f"**Added:** {book[9][:10] if book[9] else 'N/A'}")
 
                 with col2:
                     if book[8]:
                         metadata = json.loads(book[8])
 
-                        # Personal Notes
+                        # Personal Notes (highlighted)
                         if len(book) > 11 and book[11]:
-                            st.write("**Personal Notes:**")
-                            st.write(f"_{book[11]}_")
-                            st.write("")
+                            st.markdown("##### 📝 Personal Notes")
+                            st.info(book[11])
 
-                        # LLM Generated Information
-                        st.write("**LLM Generated Information**")
-
+                        # Synopsis
                         if metadata.get('synopsis'):
-                            st.write("**Synopsis:**")
+                            st.markdown("##### 📖 Synopsis")
                             st.write(metadata['synopsis'])
 
-                        if metadata.get('themes'):
-                            st.write("**Themes:**")
-                            for theme in metadata['themes']:
-                                st.write(f"- {theme}")
-
+                        # Genres as tags
                         if metadata.get('genre'):
-                            st.write("**Genre:**")
-                            for genre in metadata['genre']:
-                                st.write(f"- {genre}")
+                            st.markdown("##### 🏷️ Genres")
+                            genre_tags = " ".join([f'`{g}`' for g in metadata['genre']])
+                            st.markdown(genre_tags)
 
+                        # Themes as tags
+                        if metadata.get('themes'):
+                            st.markdown("##### 🎭 Themes")
+                            theme_tags = " ".join([f'`{t}`' for t in metadata['themes']])
+                            st.markdown(theme_tags)
+
+                        # Historical Context
                         if metadata.get('historical_context'):
-                            st.write("**Historical Context:**")
+                            st.markdown("##### 🏛️ Historical Context")
                             st.write(metadata['historical_context'])
 
                         # Related works
                         if metadata.get('related_works'):
-                            st.write("**LLM Suggested Related Books:**")
-                            for work in metadata['related_works']:
+                            st.markdown("##### 📚 Related Books (AI Suggestions)")
+                            for work in metadata['related_works'][:3]:
                                 if isinstance(work, dict):
-                                    st.write(f"- **{work.get('title', '')}** by {work.get('author', '')}")
+                                    st.markdown(f"- **{work.get('title', '')}** by {work.get('author', '')}")
                                     if work.get('reason'):
-                                        st.write(f"  _{work['reason']}_")
+                                        st.caption(f"  _{work['reason']}_")
                                 else:
-                                    st.write(f"- {work}")
+                                    st.markdown(f"- {work}")
 
                         # Related books from collection
                         related_books = find_related_books(db, book[0], metadata)
                         if related_books:
-                            st.write("**Similar Books in Your Collection:**")
+                            st.markdown("##### 🔗 Similar in Your Collection")
                             for related in related_books:
-                                st.write(f"- **{related['title']}** by {related['author']}")
+                                st.markdown(f"- **{related['title']}** by {related['author']}")
 
                         # Sources
                         if "sources" in metadata:
-                            st.write("**Data Sources:**", ", ".join(metadata["sources"]))
+                            st.caption(f"Data sources: {', '.join(metadata['sources'])}")
 
                 # Action buttons
-                st.divider()
+                st.markdown("---")
                 col3, col4, col5 = st.columns(3)
+
                 with col3:
-                    if st.button("🗑 Delete", key=f"del_{book[0]}"):
-                        try:
-                            db.delete_book(book[0])
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error deleting book: {str(e)}")
+                    if st.button("🗑️ Delete", key=f"del_{book[0]}", use_container_width=True):
+                        st.session_state.delete_confirm = book[0]
+                        st.rerun()
 
                 with col5:
-                    if st.button("🔄 Refresh", key=f"refresh_{book[0]}"):
+                    if st.button("🔄 Refresh Metadata", key=f"refresh_{book[0]}", use_container_width=True):
                         try:
-                            with st.spinner("Updating book information..."):
-                                enhanced_metadata = book_service.enhance_book_data(
-                                    book[1], book[2], book[3], book[4]
-                                )
-                                if enhanced_metadata:
-                                    db.update_metadata(book[0], enhanced_metadata)
-                                    st.success("Metadata refreshed!")
-                                    st.rerun()
+                            progress = st.progress(0, text="Refreshing metadata...")
+                            progress.progress(30, text="Fetching latest data...")
+
+                            enhanced_metadata = book_service.enhance_book_data(
+                                book[1], book[2], book[3], book[4]
+                            )
+
+                            progress.progress(70, text="Updating database...")
+
+                            if enhanced_metadata:
+                                db.update_metadata(book[0], enhanced_metadata)
+                                progress.progress(100, text="Complete!")
+                                time.sleep(0.3)
+                                progress.empty()
+                                st.success("Metadata refreshed successfully!")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                progress.empty()
+                                st.error("Failed to refresh metadata")
                         except Exception as e:
                             logger.error(f"Error refreshing metadata: {str(e)}", exc_info=True)
                             st.error("Failed to refresh metadata")
@@ -525,106 +857,72 @@ def render_view_collection_page(db: Database, book_service: BookService):
         logger.error(f"Error rendering collection: {str(e)}", exc_info=True)
         st.error("An error occurred while loading your collection")
 
+
 def render_analytics_page(db: Database, book_service: BookService):
     """Render the Analytics page."""
-    st.header("Library Analytics")
-
-    # Theme Analysis section
-    st.subheader("Theme Analysis")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("Extract Current Themes"):
-            try:
-                with st.spinner("Extracting themes from library..."):
-                    books = db.get_books_with_metadata()
-                    theme_data = extract_and_save_themes(books)
-                    st.success(f"Extracted {len(theme_data['themes'])} unique themes!")
-
-                    with open("data/theme_inventory.json", "r") as f:
-                        st.download_button(
-                            "Download Theme Inventory",
-                            f.read(),
-                            "theme_inventory.json",
-                            "application/json"
-                        )
-            except Exception as e:
-                logger.error(f"Error extracting themes: {str(e)}", exc_info=True)
-                st.error("Failed to extract themes")
-
-    with col2:
-        if st.button("Analyze Theme Groupings"):
-            try:
-                with open("data/theme_inventory.json", "r") as f:
-                    theme_data = json.load(f)
-
-                with st.spinner("Analyzing themes..."):
-                    theme_analysis = book_service.analyze_themes(theme_data['themes'])
-                    if theme_analysis:
-                        # Save analysis
-                        with open("data/theme_analysis.json", "w") as f:
-                            json.dump(theme_analysis, f, indent=2)
-                        st.success("Theme analysis complete!")
-                    else:
-                        st.error("Failed to analyze themes")
-            except FileNotFoundError:
-                st.error("Please extract themes first")
-            except Exception as e:
-                logger.error(f"Error analyzing themes: {str(e)}", exc_info=True)
-                st.error("Failed to analyze themes")
-
-    # Display existing theme analysis
-    try:
-        with open("data/theme_analysis.json", "r") as f:
-            theme_analysis = json.load(f)
-            st.divider()
-            display_theme_analysis(theme_analysis)
-    except FileNotFoundError:
-        st.info("No theme analysis available. Start by clicking 'Extract Current Themes'.")
-    except Exception as e:
-        logger.error(f"Error loading theme analysis: {str(e)}")
-
-    st.divider()
+    render_page_header(
+        "Library Analytics",
+        "Discover patterns and insights in your collection",
+        "📊"
+    )
 
     # Get analytics data
     try:
         books = db.get_all_books()
+
+        if not books:
+            render_empty_state(
+                "📊",
+                "No Data to Analyze",
+                "Add some books to your library to see analytics and insights."
+            )
+            return
+
         stats, genre_counts, theme_counts = generate_analytics(books)
 
-        # Basic metrics
+        # Metrics row with styled cards
+        st.markdown("### Quick Stats")
         col1, col2, col3, col4, col5 = st.columns(5)
 
         col1.metric("Total Books", stats.total_books)
-        col2.metric("Unique Authors", stats.unique_authors)
-        col3.metric("Avg. Publication Year", stats.avg_pub_year or "N/A")
+        col2.metric("Authors", stats.unique_authors)
+        col3.metric("Avg. Year", stats.avg_pub_year or "N/A")
 
         if stats.common_time_period:
             col4.metric(
-                "Common Time Period",
+                "Era",
                 stats.common_time_period,
-                f"{round(stats.time_period_coverage * 100)}% coverage"
+                f"{round(stats.time_period_coverage * 100)}%"
             )
         else:
-            col4.metric("Common Time Period", "N/A")
+            col4.metric("Era", "N/A")
 
         fiction_pct = round(stats.fiction_ratio * 100)
         nonfiction_pct = round(stats.nonfiction_ratio * 100)
-        col5.metric("Fiction/Non-Fiction", f"{fiction_pct}% / {nonfiction_pct}%")
+        col5.metric("Fiction", f"{fiction_pct}%", f"{nonfiction_pct}% Non-Fiction")
+
+        st.markdown("---")
 
         # Genre distribution
         if not genre_counts.empty:
-            st.subheader("Genre Distribution")
+            st.markdown("### Genre Distribution")
 
-            tab1, tab2, tab3 = st.tabs(["Combined View", "Fiction", "Non-Fiction"])
+            tab1, tab2, tab3 = st.tabs(["📊 Combined View", "📖 Fiction", "📚 Non-Fiction"])
 
             with tab1:
                 fig = px.sunburst(
                     genre_counts,
                     path=['category', 'genre'],
                     values='count',
-                    title='All Genres'
+                    color='count',
+                    color_continuous_scale=['#E0E7FF', '#6366F1', '#312E81']
                 )
-                st.plotly_chart(fig)
+                fig.update_layout(
+                    margin=dict(t=30, l=0, r=0, b=0),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font=dict(family="Inter")
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
             with tab2:
                 fiction_data = genre_counts[genre_counts['category'] == 'Fiction']
@@ -633,9 +931,17 @@ def render_analytics_page(db: Database, book_service: BookService):
                         fiction_data,
                         values='count',
                         names='genre',
-                        title='Fiction Genres'
+                        color_discrete_sequence=CHART_COLORS
                     )
-                    st.plotly_chart(fig_fiction)
+                    fig_fiction.update_layout(
+                        margin=dict(t=30, l=0, r=0, b=0),
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        font=dict(family="Inter"),
+                        showlegend=True,
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.3)
+                    )
+                    fig_fiction.update_traces(textposition='inside', textinfo='percent+label')
+                    st.plotly_chart(fig_fiction, use_container_width=True)
                 else:
                     st.info("No fiction books in your collection yet.")
 
@@ -646,52 +952,153 @@ def render_analytics_page(db: Database, book_service: BookService):
                         nonfiction_data,
                         values='count',
                         names='genre',
-                        title='Non-Fiction Genres'
+                        color_discrete_sequence=CHART_COLORS
                     )
-                    st.plotly_chart(fig_nonfiction)
+                    fig_nonfiction.update_layout(
+                        margin=dict(t=30, l=0, r=0, b=0),
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        font=dict(family="Inter"),
+                        showlegend=True,
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.3)
+                    )
+                    fig_nonfiction.update_traces(textposition='inside', textinfo='percent+label')
+                    st.plotly_chart(fig_nonfiction, use_container_width=True)
                 else:
                     st.info("No non-fiction books in your collection yet.")
 
         # Theme distribution
         if not theme_counts.empty:
-            st.subheader("Theme Distribution")
+            st.markdown("### Theme Distribution")
             fig_themes = px.treemap(
                 theme_counts,
                 path=['theme'],
                 values='count',
-                title='Themes Across Your Collection'
+                color='count',
+                color_continuous_scale=['#DBEAFE', '#3B82F6', '#1E40AF']
             )
-            st.plotly_chart(fig_themes)
+            fig_themes.update_layout(
+                margin=dict(t=30, l=0, r=0, b=0),
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(family="Inter")
+            )
+            st.plotly_chart(fig_themes, use_container_width=True)
+
+        st.markdown("---")
+
+        # Theme Analysis section
+        st.markdown("### Theme Analysis")
+        st.write("Extract and analyze thematic patterns across your library.")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("🎯 Extract Themes", use_container_width=True):
+                try:
+                    progress = st.progress(0, text="Extracting themes...")
+                    progress.progress(30, text="Analyzing book metadata...")
+
+                    books_with_meta = db.get_books_with_metadata()
+                    theme_data = extract_and_save_themes(books_with_meta)
+
+                    progress.progress(100, text="Complete!")
+                    time.sleep(0.3)
+                    progress.empty()
+
+                    st.success(f"Extracted {len(theme_data['themes'])} unique themes!")
+
+                    with open("data/theme_inventory.json", "r") as f:
+                        st.download_button(
+                            "⬇️ Download Theme Inventory",
+                            f.read(),
+                            "theme_inventory.json",
+                            "application/json",
+                            use_container_width=True
+                        )
+                except Exception as e:
+                    logger.error(f"Error extracting themes: {str(e)}", exc_info=True)
+                    st.error("Failed to extract themes")
+
+        with col2:
+            if st.button("🧠 Analyze Groupings", use_container_width=True):
+                try:
+                    with open("data/theme_inventory.json", "r") as f:
+                        theme_data = json.load(f)
+
+                    progress = st.progress(0, text="Analyzing theme relationships...")
+                    progress.progress(50, text="AI is identifying patterns...")
+
+                    theme_analysis = book_service.analyze_themes(theme_data['themes'])
+
+                    if theme_analysis:
+                        progress.progress(90, text="Saving analysis...")
+                        with open("data/theme_analysis.json", "w") as f:
+                            json.dump(theme_analysis, f, indent=2)
+                        progress.progress(100, text="Complete!")
+                        time.sleep(0.3)
+                        progress.empty()
+                        st.success("Theme analysis complete!")
+                        st.rerun()
+                    else:
+                        progress.empty()
+                        st.error("Failed to analyze themes")
+                except FileNotFoundError:
+                    st.error("Please extract themes first")
+                except Exception as e:
+                    logger.error(f"Error analyzing themes: {str(e)}", exc_info=True)
+                    st.error("Failed to analyze themes")
+
+        # Display existing theme analysis
+        try:
+            with open("data/theme_analysis.json", "r") as f:
+                theme_analysis = json.load(f)
+                st.markdown("---")
+                display_theme_analysis(theme_analysis)
+        except FileNotFoundError:
+            st.info("💡 Click 'Extract Themes' to discover thematic patterns in your library.")
+        except Exception as e:
+            logger.error(f"Error loading theme analysis: {str(e)}")
 
     except Exception as e:
         logger.error(f"Error generating analytics: {str(e)}", exc_info=True)
         st.error("Error generating analytics")
 
+
 def render_network_view_page(db: Database):
     """Render the Network View page."""
-    st.header("Book Relationship Network")
+    render_page_header(
+        "Book Relationships",
+        "Visualize connections between books in your collection",
+        "🔗"
+    )
 
-    st.markdown("""
-    This network visualization shows relationships between books in your collection.
-
-    **Connection Types:**
-    - 👤 Author (Strong connection)
-    - 📅 Decade (Medium connection)
-    - 🎭 Themes (Connection strength based on number of shared themes)
-
-    **How to Read:**
-    - Larger nodes indicate books with more connections
-    - Different colored lines show different types of connections
-    - Hover over nodes and lines for details
-    """)
+    # Legend
+    st.markdown('''
+        <div style="background: #F3F4F6; border-radius: 12px; padding: 1rem 1.5rem; margin-bottom: 1.5rem;">
+            <strong>Connection Types:</strong>
+            <span style="margin-left: 1.5rem;">🔵 Same Author</span>
+            <span style="margin-left: 1rem;">🟢 Same Decade</span>
+            <span style="margin-left: 1rem;">🟠 Shared Themes</span>
+        </div>
+    ''', unsafe_allow_html=True)
 
     view_type = st.radio(
-        "Select View",
+        "Filter",
         ["All Books", "Fiction Only", "Non-Fiction Only"],
-        horizontal=True
+        horizontal=True,
+        label_visibility="collapsed"
     )
 
     try:
+        books = db.get_all_books()
+
+        if not books or len(books) < 2:
+            render_empty_state(
+                "🔗",
+                "Not Enough Books",
+                "Add at least 2 books to see their relationships visualized."
+            )
+            return
+
         with st.spinner("Generating network visualization..."):
             category = None
             if view_type == "Fiction Only":
@@ -699,7 +1106,6 @@ def render_network_view_page(db: Database):
             elif view_type == "Non-Fiction Only":
                 category = "Non-Fiction"
 
-            books = db.get_all_books()
             G = create_book_network(books, category)
             fig = visualize_book_network(G)
 
@@ -707,34 +1113,52 @@ def render_network_view_page(db: Database):
                 st.plotly_chart(fig, use_container_width=True)
 
                 # Network statistics
-                st.subheader("Network Statistics")
+                st.markdown("### Network Statistics")
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Total Books", len(G.nodes()))
+                    st.metric("Books", len(G.nodes()))
                 with col2:
-                    st.metric("Total Connections", len(G.edges()))
+                    st.metric("Connections", len(G.edges()))
                 with col3:
                     if len(G.nodes()) > 0:
                         import networkx as nx
                         avg_connections = sum(dict(G.degree()).values()) / len(G.nodes())
                         st.metric("Avg. Connections", f"{avg_connections:.1f}")
             else:
-                st.info("Add more books to see their relationships!")
+                render_empty_state(
+                    "🔗",
+                    "No Connections Found",
+                    "Your books don't share enough common attributes yet. Add more books or refresh metadata."
+                )
 
     except Exception as e:
         logger.error(f"Error creating network view: {str(e)}", exc_info=True)
         st.error("Error generating network visualization")
 
+
 def render_executive_summary_page(db: Database, book_service: BookService):
     """Render the Executive Summary page."""
-    st.header("Library Executive Summary")
+    render_page_header(
+        "Executive Summary",
+        "Get a high-level overview of your library",
+        "📋"
+    )
 
     # Quick stats
     try:
         books = db.get_all_books()
+
+        if not books:
+            render_empty_state(
+                "📋",
+                "No Books Yet",
+                "Add books to your library to generate an executive summary."
+            )
+            return
+
         stats, genre_counts, _ = generate_analytics(books)
 
-        st.subheader("Quick Stats")
+        st.markdown("### Quick Stats")
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
@@ -742,123 +1166,201 @@ def render_executive_summary_page(db: Database, book_service: BookService):
         with col2:
             st.metric("Unique Authors", stats.unique_authors)
         with col3:
-            st.metric("Average Publication Year",
-                     stats.avg_pub_year if stats.avg_pub_year else "N/A")
+            st.metric("Avg. Year", stats.avg_pub_year if stats.avg_pub_year else "N/A")
         with col4:
             fiction_pct = round(stats.fiction_ratio * 100)
             nonfiction_pct = round(stats.nonfiction_ratio * 100)
-            st.metric("Fiction/Non-Fiction",
-                     f"{fiction_pct}% / {nonfiction_pct}%")
+            st.metric("Fiction/Non-Fiction", f"{fiction_pct}% / {nonfiction_pct}%")
 
-        st.divider()
+        st.markdown("---")
     except Exception as e:
         logger.error(f"Error generating stats: {str(e)}")
 
     # Catalog and summary generation
+    st.markdown("### Generate Reports")
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button("Generate Library Catalog"):
-            try:
-                with st.spinner("Generating catalog..."):
-                    json_path, library_data = generate_library_json(db)
-                    st.success("Library catalog generated!")
+        st.markdown('''
+            <div style="background: #F3F4F6; border-radius: 12px; padding: 1.5rem; height: 100%;">
+                <h4 style="margin-top: 0;">📄 Library Catalog</h4>
+                <p style="color: #6B7280; font-size: 0.875rem;">Generate a JSON file with all your books for backup or analysis.</p>
+            </div>
+        ''', unsafe_allow_html=True)
 
-                    with open(json_path, "r") as f:
-                        st.download_button(
-                            "Download Library Catalog",
-                            f.read(),
-                            "library_catalog.json",
-                            "application/json"
-                        )
+        if st.button("Generate Catalog", use_container_width=True):
+            try:
+                progress = st.progress(0, text="Generating catalog...")
+                progress.progress(50, text="Compiling book data...")
+
+                json_path, library_data = generate_library_json(db)
+
+                progress.progress(100, text="Complete!")
+                time.sleep(0.3)
+                progress.empty()
+
+                st.success(f"Catalog generated with {len(library_data['library'])} books!")
+
+                with open(json_path, "r") as f:
+                    st.download_button(
+                        "⬇️ Download Catalog",
+                        f.read(),
+                        "library_catalog.json",
+                        "application/json",
+                        use_container_width=True
+                    )
             except Exception as e:
                 logger.error(f"Error generating catalog: {str(e)}", exc_info=True)
                 st.error("Failed to generate catalog")
 
     with col2:
-        if st.button("Generate Summary"):
+        st.markdown('''
+            <div style="background: #F3F4F6; border-radius: 12px; padding: 1.5rem; height: 100%;">
+                <h4 style="margin-top: 0;">🤖 AI Summary</h4>
+                <p style="color: #6B7280; font-size: 0.875rem;">Get AI-generated insights, patterns, and recommendations.</p>
+            </div>
+        ''', unsafe_allow_html=True)
+
+        if st.button("Generate Summary", use_container_width=True):
             try:
                 with open("data/library_catalog.json", "r") as f:
                     library_data = json.load(f)
 
-                with st.spinner("Generating summary..."):
-                    summary = book_service.generate_executive_summary(library_data)
-                    if summary:
-                        summary_info = {
-                            "last_updated": datetime.now().isoformat(),
-                            "summary": summary
-                        }
-                        with open("data/executive_summary.json", "w") as f:
-                            json.dump(summary_info, f, indent=2)
+                progress = st.progress(0, text="Analyzing library...")
+                progress.progress(30, text="AI is reviewing your collection...")
 
-                        st.success("Summary generated!")
-                    else:
-                        st.error("Failed to generate summary")
+                summary = book_service.generate_executive_summary(library_data)
+
+                progress.progress(80, text="Compiling insights...")
+
+                if summary:
+                    summary_info = {
+                        "last_updated": datetime.now().isoformat(),
+                        "summary": summary
+                    }
+                    with open("data/executive_summary.json", "w") as f:
+                        json.dump(summary_info, f, indent=2)
+
+                    progress.progress(100, text="Complete!")
+                    time.sleep(0.3)
+                    progress.empty()
+                    st.success("Summary generated!")
+                    st.rerun()
+                else:
+                    progress.empty()
+                    st.error("Failed to generate summary")
             except FileNotFoundError:
                 st.error("Please generate library catalog first")
             except Exception as e:
                 logger.error(f"Error generating summary: {str(e)}", exc_info=True)
                 st.error("Failed to generate summary")
 
+    st.markdown("---")
+
     # Display existing summary
     try:
         with open("data/executive_summary.json", "r") as f:
             summary_data = json.load(f)
 
-        st.subheader("Collection Summary")
-        st.write(summary_data["summary"]["summary"])
+        st.markdown("### Collection Summary")
+        st.markdown(f'''
+            <div style="background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                {summary_data["summary"]["summary"]}
+            </div>
+        ''', unsafe_allow_html=True)
 
-        st.subheader("Key Patterns")
-        for pattern in summary_data["summary"]["patterns"]:
-            st.write(f"• {pattern}")
+        col1, col2 = st.columns(2)
 
-        st.subheader("Recommendations")
-        for rec in summary_data["summary"]["recommendations"]:
-            st.write(f"• {rec}")
+        with col1:
+            st.markdown("### Key Patterns")
+            for pattern in summary_data["summary"]["patterns"]:
+                st.markdown(f"- {pattern}")
 
-        st.caption(f"Last updated: {summary_data['last_updated']}")
+        with col2:
+            st.markdown("### Recommendations")
+            for rec in summary_data["summary"]["recommendations"]:
+                st.markdown(f"- {rec}")
+
+        st.caption(f"Last updated: {summary_data['last_updated'][:10]}")
 
     except FileNotFoundError:
-        st.info("No summary available. Generate one using the buttons above.")
+        st.info("💡 Generate a catalog first, then create an AI summary to see insights about your library.")
     except Exception as e:
         logger.error(f"Error displaying summary: {str(e)}")
 
+
 def render_ask_library_page(db: Database, book_service: BookService):
     """Render the Ask the Library page."""
-    st.header("Ask the Large Library Model")
+    render_page_header(
+        "Ask the Library",
+        "Have a conversation with your book collection",
+        "💬"
+    )
 
-    st.markdown("""
-    Ask questions about your library collection. For example:
-    - What themes are common in my collection?
-    - Which authors do I read most?
-    - What genres are underrepresented?
-    - Suggest books from my collection for a specific mood or topic
-    """)
+    # Example questions
+    st.markdown('''
+        <div style="background: #F3F4F6; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem;">
+            <strong>Try asking:</strong>
+            <ul style="margin: 0.75rem 0 0 0; padding-left: 1.25rem; color: #6B7280;">
+                <li>What themes are common across my collection?</li>
+                <li>Which authors do I read the most?</li>
+                <li>Suggest a book for a rainy day</li>
+                <li>What genres are underrepresented?</li>
+                <li>Find connections between my favorite books</li>
+            </ul>
+        </div>
+    ''', unsafe_allow_html=True)
 
-    query = st.text_area("Enter your question:", height=100)
+    query = st.text_area(
+        "Your Question",
+        placeholder="Ask anything about your library...",
+        height=100,
+        label_visibility="collapsed"
+    )
 
-    if st.button("Ask"):
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        ask_button = st.button("🔮 Ask the Library", use_container_width=True, type="primary")
+
+    if ask_button:
         if not query:
             st.warning("Please enter a question")
             return
 
         try:
-            with open("data/library_catalog.json", "r") as f:
-                library_data = json.load(f)
+            # Check if catalog exists
+            try:
+                with open("data/library_catalog.json", "r") as f:
+                    library_data = json.load(f)
+            except FileNotFoundError:
+                st.warning("Library catalog not found. Generating it now...")
+                json_path, library_data = generate_library_json(db)
+                st.success("Catalog generated!")
 
-            with st.spinner("Analyzing your library..."):
-                response = book_service.ask_library_question(query, library_data)
-                if response:
-                    st.markdown("### Response")
-                    st.markdown(response)
-                else:
-                    st.error("Failed to get a response")
+            progress = st.progress(0, text="Thinking...")
+            progress.progress(30, text="Analyzing your question...")
+            progress.progress(60, text="Searching your library...")
 
-        except FileNotFoundError:
-            st.error("Library catalog not found. Please generate it first in the Executive Summary page.")
+            response = book_service.ask_library_question(query, library_data)
+
+            progress.progress(100, text="Complete!")
+            time.sleep(0.3)
+            progress.empty()
+
+            if response:
+                st.markdown("### Response")
+                st.markdown(f'''
+                    <div style="background: linear-gradient(135deg, #EEF2FF 0%, #F3F4F6 100%); border-radius: 12px; padding: 1.5rem; border-left: 4px solid #6366F1;">
+                        {response}
+                    </div>
+                ''', unsafe_allow_html=True)
+            else:
+                st.error("Failed to get a response. Please try again.")
+
         except Exception as e:
             logger.error(f"Error processing query: {str(e)}", exc_info=True)
             st.error("An error occurred while processing your question")
+
 
 if __name__ == "__main__":
     try:
