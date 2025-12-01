@@ -1,167 +1,742 @@
-/* Typography */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@400;500;600&display=swap');
+/* ShelfLife - Enhanced UI Styles */
 
-/* Base styles */
-body {
-    font-family: 'Inter', sans-serif;
-    line-height: 1.6;
-    color: #F0F0F0;
+/* Typography */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+/* CSS Custom Properties - Color System */
+:root {
+    /* Primary Colors */
+    --primary-50: #EEF2FF;
+    --primary-100: #E0E7FF;
+    --primary-200: #C7D2FE;
+    --primary-300: #A5B4FC;
+    --primary-400: #818CF8;
+    --primary-500: #6366F1;
+    --primary-600: #4F46E5;
+    --primary-700: #4338CA;
+    --primary-800: #3730A3;
+    --primary-900: #312E81;
+
+    /* Neutral Colors */
+    --gray-50: #F9FAFB;
+    --gray-100: #F3F4F6;
+    --gray-200: #E5E7EB;
+    --gray-300: #D1D5DB;
+    --gray-400: #9CA3AF;
+    --gray-500: #6B7280;
+    --gray-600: #4B5563;
+    --gray-700: #374151;
+    --gray-800: #1F2937;
+    --gray-900: #111827;
+
+    /* Accent Colors */
+    --success-500: #10B981;
+    --success-100: #D1FAE5;
+    --warning-500: #F59E0B;
+    --warning-100: #FEF3C7;
+    --error-500: #EF4444;
+    --error-100: #FEE2E2;
+    --info-500: #3B82F6;
+    --info-100: #DBEAFE;
+
+    /* Semantic Colors */
+    --text-primary: var(--gray-900);
+    --text-secondary: var(--gray-600);
+    --text-muted: var(--gray-400);
+    --bg-primary: #FFFFFF;
+    --bg-secondary: var(--gray-50);
+    --bg-tertiary: var(--gray-100);
+    --border-color: var(--gray-200);
+    --border-color-light: var(--gray-100);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+    /* Border Radius */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --radius-full: 9999px;
+
+    /* Transitions */
+    --transition-fast: 150ms ease;
+    --transition-normal: 200ms ease;
+    --transition-slow: 300ms ease;
 }
 
-/* Main container width control */
+/* Base Styles */
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.6;
+    color: var(--text-primary);
+    background-color: var(--bg-secondary);
+}
+
+/* Main Container */
 .block-container {
     max-width: 1200px;
     padding: 2rem;
     margin: 0 auto;
 }
 
-/* Ensure all content respects max width */
 .main .block-container {
     max-width: 1200px !important;
-    width: 1200px !important;
+    padding-top: 1rem;
 }
 
-/* Control width of all markdown content */
-.stMarkdown {
-    max-width: 1200px !important;
-    margin: 0 auto;
-}
-
-/* Headers */
+/* Typography */
 h1, h2, h3, h4, h5, h6 {
     font-family: 'Space Grotesk', sans-serif;
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: -0.02em;
-    margin-top: 1.5em;
+    color: var(--text-primary) !important;
+    margin-top: 1.25em;
     margin-bottom: 0.75em;
-    color: rgb(49, 51, 63) !important;
 }
 
 h1 {
-    font-size: 2.5rem;
+    font-size: 2.25rem;
     line-height: 1.2;
+    font-weight: 700;
 }
 
 h2 {
-    font-size: 2rem;
+    font-size: 1.75rem;
     line-height: 1.3;
 }
 
 h3 {
-    font-size: 1.5rem;
+    font-size: 1.375rem;
     line-height: 1.4;
 }
 
-/* Metric containers */
-div.css-12w0qpk.e1tzin5v1 {
-    background-color: rgba(255, 255, 255, 0.05);
-    padding: 1.5rem;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+/* Paragraphs and Text */
+p, li, span, div {
+    color: var(--text-primary);
 }
 
-/* Expander styling */
-.streamlit-expander {
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background-color: rgba(255, 255, 255, 0.02);
-    border-radius: 8px;
+.stMarkdown > div > p,
+.stMarkdown > div > ul > li,
+.element-container > div > p {
+    color: var(--text-primary) !important;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    line-height: 1.7;
+}
+
+/* ==================== */
+/* SIDEBAR STYLES */
+/* ==================== */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, var(--primary-900) 0%, var(--primary-800) 100%);
+    border-right: none;
+}
+
+[data-testid="stSidebar"] .block-container {
+    padding-top: 2rem;
+}
+
+/* Sidebar text colors */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label {
+    color: white !important;
+}
+
+[data-testid="stSidebar"] .stMarkdown p {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* Sidebar navigation buttons */
+[data-testid="stSidebar"] .stButton > button {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: white !important;
+    font-weight: 500;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    border-radius: var(--radius-md);
+    text-align: left;
+    transition: all var(--transition-normal);
+}
+
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateX(4px);
+}
+
+/* Active nav button */
+[data-testid="stSidebar"] .stButton > button[data-active="true"],
+[data-testid="stSidebar"] .nav-active > button {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Sidebar dividers */
+[data-testid="stSidebar"] hr {
+    border-color: rgba(255, 255, 255, 0.2);
+    margin: 1.5rem 0;
+}
+
+/* ==================== */
+/* CARD COMPONENTS */
+/* ==================== */
+.book-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-normal);
+}
+
+.book-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--primary-200);
+}
+
+/* Metric Cards */
+.metric-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    transition: all var(--transition-normal);
+}
+
+.metric-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+/* Streamlit Metric Override */
+[data-testid="stMetric"] {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    box-shadow: var(--shadow-sm);
+}
+
+[data-testid="stMetric"]:hover {
+    box-shadow: var(--shadow-md);
+    border-color: var(--primary-200);
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--text-secondary) !important;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+[data-testid="stMetricValue"] {
+    color: var(--text-primary) !important;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+}
+
+[data-testid="stMetricDelta"] {
+    font-size: 0.8125rem;
+}
+
+/* ==================== */
+/* EXPANDER STYLES */
+/* ==================== */
+.streamlit-expanderHeader {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 1.0625rem !important;
+    color: var(--text-primary) !important;
+    padding: 1rem 1.25rem;
+    transition: all var(--transition-normal);
+}
+
+.streamlit-expanderHeader:hover {
+    background: var(--bg-secondary);
+    border-color: var(--primary-300);
+}
+
+.streamlit-expanderContent {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    padding: 1.5rem;
+}
+
+/* Expander content text */
+.streamlit-expanderContent p,
+.streamlit-expanderContent li,
+.streamlit-expanderContent div {
+    color: var(--text-primary) !important;
+}
+
+.streamlit-expanderContent strong {
+    color: var(--text-primary) !important;
+    font-weight: 600;
+}
+
+/* ==================== */
+/* FORM ELEMENTS */
+/* ==================== */
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stNumberInput > div > div > input {
+    background-color: var(--bg-primary);
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1rem;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    color: var(--text-primary) !important;
+    transition: all var(--transition-fast);
+}
+
+.stTextInput > div > div > input:focus,
+.stTextArea > div > div > textarea:focus,
+.stNumberInput > div > div > input:focus {
+    border-color: var(--primary-500);
+    box-shadow: 0 0 0 3px var(--primary-100);
+    outline: none;
+}
+
+.stTextInput > label,
+.stTextArea > label,
+.stNumberInput > label,
+.stSelectbox > label {
+    color: var(--text-primary) !important;
+    font-weight: 500;
+    font-size: 0.875rem;
+    margin-bottom: 0.375rem;
+}
+
+/* Select Box */
+.stSelectbox > div > div {
+    background-color: var(--bg-primary);
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+.stSelectbox > div > div:hover {
+    border-color: var(--primary-300);
+}
+
+/* ==================== */
+/* BUTTON STYLES */
+/* ==================== */
+.stButton > button {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.875rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: var(--radius-md);
+    border: none;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+/* Primary Button */
+.stButton > button[kind="primary"],
+.stButton > button:not([kind]) {
+    background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+    color: white !important;
+    box-shadow: var(--shadow-sm);
+}
+
+.stButton > button[kind="primary"]:hover,
+.stButton > button:not([kind]):hover {
+    background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+
+/* Secondary Button */
+.stButton > button[kind="secondary"] {
+    background: var(--bg-primary);
+    color: var(--text-primary) !important;
+    border: 1.5px solid var(--border-color);
+}
+
+.stButton > button[kind="secondary"]:hover {
+    background: var(--bg-secondary);
+    border-color: var(--primary-300);
+}
+
+/* Danger Button (for delete) */
+.danger-btn > button {
+    background: linear-gradient(135deg, var(--error-500) 0%, #DC2626 100%) !important;
+    color: white !important;
+}
+
+.danger-btn > button:hover {
+    background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%) !important;
+}
+
+/* Success Button */
+.success-btn > button {
+    background: linear-gradient(135deg, var(--success-500) 0%, #059669 100%) !important;
+    color: white !important;
+}
+
+/* ==================== */
+/* TABS */
+/* ==================== */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.5rem;
+    background: var(--bg-tertiary);
+    padding: 0.375rem;
+    border-radius: var(--radius-lg);
+}
+
+.stTabs [data-baseweb="tab"] {
+    border-radius: var(--radius-md);
+    padding: 0.625rem 1.25rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.stTabs [aria-selected="true"] {
+    background: var(--bg-primary) !important;
+    color: var(--primary-600) !important;
+    box-shadow: var(--shadow-sm);
+}
+
+/* ==================== */
+/* BADGES & TAGS */
+/* ==================== */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.badge-new {
+    background: var(--success-100);
+    color: var(--success-500);
+}
+
+.badge-good {
+    background: var(--info-100);
+    color: var(--info-500);
+}
+
+.badge-fair {
+    background: var(--warning-100);
+    color: var(--warning-500);
+}
+
+.badge-poor {
+    background: var(--error-100);
+    color: var(--error-500);
+}
+
+/* ==================== */
+/* ALERTS & MESSAGES */
+/* ==================== */
+.stAlert {
+    border-radius: var(--radius-md);
+    border-left-width: 4px;
+}
+
+[data-testid="stNotification"] {
+    border-radius: var(--radius-md);
+}
+
+/* Success message */
+.stSuccess {
+    background: var(--success-100);
+    border-color: var(--success-500);
+}
+
+/* Error message */
+.stError {
+    background: var(--error-100);
+    border-color: var(--error-500);
+}
+
+/* Info message */
+.stInfo {
+    background: var(--info-100);
+    border-color: var(--info-500);
+}
+
+/* Warning message */
+.stWarning {
+    background: var(--warning-100);
+    border-color: var(--warning-500);
+}
+
+/* ==================== */
+/* PROGRESS BAR */
+/* ==================== */
+.stProgress > div > div > div {
+    background: linear-gradient(90deg, var(--primary-500) 0%, var(--primary-400) 100%);
+    border-radius: var(--radius-full);
+}
+
+.stProgress > div > div {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+}
+
+/* ==================== */
+/* DIVIDERS */
+/* ==================== */
+hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 1.5rem 0;
+}
+
+/* ==================== */
+/* CUSTOM COMPONENTS */
+/* ==================== */
+
+/* Header Banner */
+.app-header {
+    background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-800) 100%);
+    color: white;
+    padding: 1.5rem 2rem;
+    border-radius: var(--radius-xl);
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-lg);
+}
+
+.app-header h1 {
+    color: white !important;
+    margin: 0;
+    font-size: 1.75rem;
+}
+
+.app-header p {
+    color: rgba(255, 255, 255, 0.85) !important;
+    margin: 0.5rem 0 0 0;
+    font-size: 0.9375rem;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    background: var(--bg-primary);
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-xl);
+    margin: 2rem 0;
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.6;
+}
+
+.empty-state h3 {
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+/* Book Cover Image */
+.book-cover {
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+.book-cover img {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+/* Info Section Headers */
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.9375rem;
+    margin: 1.25rem 0 0.75rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--primary-100);
+}
+
+/* Related Books */
+.related-book {
+    background: var(--bg-secondary);
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 0.5rem;
+    border-left: 3px solid var(--primary-400);
+}
+
+/* Theme/Genre Tags */
+.tag {
+    display: inline-block;
+    background: var(--primary-50);
+    color: var(--primary-700);
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--radius-full);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    margin: 0.125rem;
+}
+
+.tag-theme {
+    background: var(--info-100);
+    color: var(--info-500);
+}
+
+.tag-genre {
+    background: var(--primary-100);
+    color: var(--primary-700);
+}
+
+/* Confirmation Dialog */
+.confirm-dialog {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-xl);
+}
+
+.confirm-dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     margin-bottom: 1rem;
 }
 
-/* Form elements */
-.stTextInput > div > div > input,
-.stTextArea > div > div > textarea {
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    padding: 0.75rem;
-    font-family: 'Inter', sans-serif;
-    color: rgb(49, 51, 63) !important;
+.confirm-dialog-icon {
+    width: 40px;
+    height: 40px;
+    background: var(--error-100);
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
 }
 
-/* Better spacing for content sections */
-.stMarkdown > div > p,
-.stMarkdown > div > ul > li,
-.element-container > div > p,
-.element-container > div > ul > li {
-    color: rgb(49, 51, 63) !important;
-    font-family: 'Inter', sans-serif;
-    font-size: 1rem;
-    line-height: 1.6;
-    margin-bottom: 0.5em;
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
 }
 
-/* Book information styling */
-.book-info {
-    padding: 1.5rem;
-    background-color: rgba(255, 255, 255, 0.02);
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+/* ==================== */
+/* ANIMATIONS */
+/* ==================== */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-/* Sidebar refinements */
-.css-1d391kg {
-    width: 300px;
-    background-color: rgba(255, 255, 255, 0.02);
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
 }
 
-/* Button styling */
-.stButton > button {
-    font-family: 'Inter', sans-serif;
-    font-weight: 500;
-    padding: 0.75rem 1.5rem;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background-color: rgba(255, 255, 255, 0.05);
-    transition: all 0.2s ease;
+@keyframes slideIn {
+    from { transform: translateX(-10px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
 }
 
-.stButton > button:hover {
-    background-color: rgba(255, 255, 255, 0.1);
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
 }
 
-/* Select box styling */
-.stSelectbox > div > div {
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
+.animate-pulse {
+    animation: pulse 2s ease-in-out infinite;
 }
 
-/* Expander header text */
-.streamlit-expander > div:first-child {
-    color: rgb(49, 51, 63) !important;
-    font-size: 1.4rem !important;
-    font-family: 'Space Grotesk', sans-serif;
-    font-weight: 500;
+/* ==================== */
+/* RESPONSIVE STYLES */
+/* ==================== */
+@media (max-width: 768px) {
+    .block-container {
+        padding: 1rem;
+    }
+
+    h1 {
+        font-size: 1.75rem;
+    }
+
+    h2 {
+        font-size: 1.5rem;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
 }
 
-/* Book information text */
-.streamlit-expanderContent div {
-    color: rgb(49, 51, 63) !important;
+@media (max-width: 480px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
-/* List items in book details */
-.streamlit-expanderContent ul li {
-    color: rgb(49, 51, 63) !important;
-    margin-bottom: 0.25em;
+/* ==================== */
+/* PLOTLY CHART OVERRIDES */
+/* ==================== */
+.js-plotly-plot .plotly .modebar {
+    background: var(--bg-primary) !important;
+    border-radius: var(--radius-md);
 }
 
-/* Enhanced info sections spacing */
-.streamlit-expanderContent div > p {
-    margin-bottom: 1.2em !important;
+.js-plotly-plot {
+    border-radius: var(--radius-lg);
+    overflow: hidden;
 }
 
-/* Section headers in book info */
-.streamlit-expanderContent div strong {
-    display: block;
-    margin-top: 1.5em;
-    margin-bottom: 0.5em;
-    font-family: 'Space Grotesk', sans-serif;
-    font-weight: 500;
-}
-
-/* First section header shouldn't have top margin */
-.streamlit-expanderContent div strong:first-child {
-    margin-top: 0;
-} 
+/* ==================== */
+/* UTILITY CLASSES */
+/* ==================== */
+.text-center { text-align: center; }
+.text-muted { color: var(--text-muted) !important; }
+.text-secondary { color: var(--text-secondary) !important; }
+.text-primary-color { color: var(--primary-600) !important; }
+.font-bold { font-weight: 700; }
+.font-medium { font-weight: 500; }
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mt-3 { margin-top: 1.5rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+.mb-3 { margin-bottom: 1.5rem; }
