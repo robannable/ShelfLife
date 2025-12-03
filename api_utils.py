@@ -16,6 +16,25 @@ from network_utils import (
 
 logger = get_logger(__name__)
 
+# Config helper for backward compatibility with older config.py files
+def _get_config(attr: str, default: Any) -> Any:
+    """Get config attribute with fallback default."""
+    return getattr(config, attr, default)
+
+# Default API test endpoints (used if not defined in config.py)
+DEFAULT_API_TEST_ENDPOINTS = {
+    "google_books": {
+        "url": "https://www.googleapis.com/books/v1/volumes",
+        "method": "GET",
+        "params": lambda key: {"key": key, "q": "test"}
+    },
+    "open_library": {
+        "url": "https://openlibrary.org/search.json",
+        "method": "GET",
+        "params": {"q": "test"}
+    }
+}
+
 # Rate limiters for external APIs
 # Google Books: 1000 requests/day (conservative rate limit)
 # Open Library: No official limit, but be respectful
@@ -41,16 +60,16 @@ def test_api_connection(api_name: str) -> Dict[str, bool]:
     Returns dict with 'success' boolean and optional 'error' message.
     """
     try:
-        endpoint_config = config.API_TEST_ENDPOINTS.get(api_name)
+        endpoint_config = _get_config('API_TEST_ENDPOINTS', DEFAULT_API_TEST_ENDPOINTS).get(api_name)
         if not endpoint_config:
             return {"success": False, "error": f"No configuration found for {api_name}"}
         
         # Get API key if needed
         api_key = None
         if api_name == "google_books":
-            api_key = config.GOOGLE_BOOKS_API_KEY
+            api_key = _get_config('GOOGLE_BOOKS_API_KEY', '')
         elif api_name == "perplexity":
-            api_key = config.PERPLEXITY_API_KEY
+            api_key = _get_config('PERPLEXITY_API_KEY', '')
         
         # Prepare request
         url = endpoint_config["url"]
@@ -138,7 +157,7 @@ def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None)
         if isbn:
             logger.debug(f"Fetching from Open Library by ISBN: {isbn}")
             response = open_library_session.get(
-                f"{config.OPEN_LIBRARY_API_URL}?bibkeys=ISBN:{isbn}&format=json&jscmd=data",
+                f"{_get_config('OPEN_LIBRARY_API_URL', 'https://openlibrary.org/api/books')}?bibkeys=ISBN:{isbn}&format=json&jscmd=data",
                 timeout=10
             )
             if response.status_code == 200 and response.json():
@@ -149,7 +168,7 @@ def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None)
         query = f"title:{title} author:{author}"
         logger.debug(f"Searching Open Library: {query}")
         response = open_library_session.get(
-            config.OPEN_LIBRARY_SEARCH_URL,
+            _get_config('OPEN_LIBRARY_SEARCH_URL', 'https://openlibrary.org/search.json'),
             params={"q": query, "limit": 1},
             timeout=10
         )
@@ -201,10 +220,10 @@ def fetch_from_google_books(title: str, author: str, isbn: Optional[str] = None)
 
         logger.debug(f"Searching Google Books: {query}")
         response = google_books_session.get(
-            config.GOOGLE_BOOKS_API_URL,
+            _get_config('GOOGLE_BOOKS_API_URL', 'https://www.googleapis.com/books/v1/volumes'),
             params={
                 "q": query,
-                "key": config.GOOGLE_BOOKS_API_KEY,
+                "key": _get_config('GOOGLE_BOOKS_API_KEY', ''),
                 "maxResults": 1
             },
             timeout=10

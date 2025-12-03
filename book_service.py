@@ -15,6 +15,85 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
+# Config defaults for backward compatibility with older config.py files
+def _get_config(attr: str, default: Any) -> Any:
+    """Get config attribute with fallback default."""
+    return getattr(config, attr, default)
+
+# Default prompts (used if not defined in config.py)
+DEFAULT_BOOK_ANALYSIS_PROMPT = """Analyze the following book and return a JSON object with comprehensive metadata.
+
+Book: {title} by {author} ({year})
+
+Return your analysis in this exact JSON format:
+{{
+    "synopsis": "A concise 50-100 word summary of the book",
+    "themes": ["theme1", "theme2", "theme3"],
+    "genre": ["primary_genre", "secondary_genre"],
+    "historical_context": "Brief historical context or significance",
+    "related_works": [
+        {{
+            "title": "Related Book Title",
+            "author": "Author Name",
+            "reason": "Why this book is related"
+        }}
+    ],
+    "keywords": ["keyword1", "keyword2", "keyword3"],
+    "reading_level": "reading level (e.g., Adult, Young Adult, etc.)",
+    "time_period": "time period when the book is set or about"
+}}
+
+Ensure your response is valid JSON and includes all fields, even if some are empty arrays or null.
+"""
+
+DEFAULT_EXECUTIVE_SUMMARY_PROMPT = """You are a librarian experienced in curating eclectic book collections. Analyze this library collection and provide a JSON response with the following structure:
+{{
+    "summary": "A clear paragraph describing the collection's focus and character (approx 200 words).",
+    "patterns": [
+        "Key Pattern 1",
+        "Key Pattern 2",
+        "Key Pattern 3"
+    ],
+    "recommendations": [
+        "Recommendation 1",
+        "Recommendation 2",
+        "Recommendation 3"
+    ]
+}}
+
+Books in collection:
+{library_catalog}
+
+Important: Ensure your response contains ONLY valid JSON. Do not include any additional text or formatting."""
+
+DEFAULT_THEME_ANALYSIS_PROMPT = """As a literary analyst, examine these themes and group them into meaningful uber-themes.
+
+Themes to analyze:
+{themes_list}
+
+Respond with a valid JSON object using this exact structure:
+{{
+    "uber_themes": [
+        {{
+            "name": "Example Theme Group",
+            "description": "Single line description",
+            "sub_themes": [
+                {{
+                    "name": "Original Theme",
+                    "connection": "Brief note"
+                }}
+            ]
+        }}
+    ],
+    "analysis": {{
+        "summary": "Brief overview",
+        "key_insights": [
+            "Key point 1",
+            "Key point 2"
+        ]
+    }}
+}}"""
+
 
 class BookService:
     """Service for book metadata enhancement using LLM."""
@@ -23,23 +102,23 @@ class BookService:
         """Initialize the book service with configured LLM client."""
         try:
             # Initialize LLM client based on config
-            provider = config.LLM_PROVIDER.lower()
+            provider = _get_config('LLM_PROVIDER', 'anthropic').lower()
 
             if provider == "anthropic":
                 self.llm_client = LLMClientFactory.create_client(
                     provider="anthropic",
-                    api_key=config.ANTHROPIC_API_KEY,
-                    model=config.ANTHROPIC_MODEL
+                    api_key=_get_config('ANTHROPIC_API_KEY', ''),
+                    model=_get_config('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022')
                 )
-                logger.info(f"BookService initialized with Anthropic ({config.ANTHROPIC_MODEL})")
+                logger.info(f"BookService initialized with Anthropic ({_get_config('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022')})")
 
             elif provider == "ollama":
                 self.llm_client = LLMClientFactory.create_client(
                     provider="ollama",
-                    base_url=config.OLLAMA_BASE_URL,
-                    model=config.OLLAMA_MODEL
+                    base_url=_get_config('OLLAMA_BASE_URL', 'http://localhost:11434'),
+                    model=_get_config('OLLAMA_MODEL', 'llama3.1')
                 )
-                logger.info(f"BookService initialized with Ollama ({config.OLLAMA_MODEL})")
+                logger.info(f"BookService initialized with Ollama ({_get_config('OLLAMA_MODEL', 'llama3.1')})")
 
             else:
                 raise ValueError(f"Unknown LLM provider: {provider}")
@@ -81,7 +160,7 @@ class BookService:
                     year = None
 
             # Step 3: Build enhanced prompt with genre constraints
-            book_prompt = config.BOOK_ANALYSIS_PROMPT.format(
+            book_prompt = _get_config('BOOK_ANALYSIS_PROMPT', DEFAULT_BOOK_ANALYSIS_PROMPT).format(
                 title=title,
                 author=author,
                 year=year or api_metadata.get("year", "unknown")
@@ -113,7 +192,7 @@ class BookService:
 
             # Add sources
             sources = api_metadata.get('sources', [])
-            sources.append(f"LLM ({config.LLM_PROVIDER})")
+            sources.append(f"LLM ({_get_config('LLM_PROVIDER', 'anthropic')})")
             merged_data['sources'] = sources
 
             logger.info(f"Successfully enhanced metadata for: {title}")
@@ -139,7 +218,7 @@ class BookService:
         try:
             logger.info("Generating executive summary...")
 
-            prompt = config.EXECUTIVE_SUMMARY_PROMPT.format(
+            prompt = _get_config('EXECUTIVE_SUMMARY_PROMPT', DEFAULT_EXECUTIVE_SUMMARY_PROMPT).format(
                 library_catalog=json.dumps(library_catalog['library'], indent=2)
             )
 
@@ -192,7 +271,7 @@ class BookService:
         try:
             themes_list = "\n".join([f"- {theme}" for theme in themes])
 
-            prompt = config.THEME_ANALYSIS_PROMPT.format(themes_list=themes_list)
+            prompt = _get_config('THEME_ANALYSIS_PROMPT', DEFAULT_THEME_ANALYSIS_PROMPT).format(themes_list=themes_list)
 
             response = self.llm_client.generate(prompt)
 
