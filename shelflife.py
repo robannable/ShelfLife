@@ -31,7 +31,8 @@ from constants import GENRE_CATEGORIES
 from validation import validate_book_input, validate_search_term, sanitize_string
 
 # Initialize logger
-ShelfLifeLogger().set_level(config.LOG_LEVEL)
+# Use getattr with default for backward compatibility with older config.py files
+ShelfLifeLogger().set_level(getattr(config, 'LOG_LEVEL', 'INFO'))
 logger = get_logger(__name__)
 
 # Custom color palette for charts
