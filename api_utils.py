@@ -1,6 +1,6 @@
 """
 API utilities for fetching book metadata from external APIs.
-Includes retry logic and rate limiting for reliability.
+Includes retry logic, rate limiting, and caching for reliability and performance.
 """
 import requests
 import json
@@ -13,6 +13,7 @@ from network_utils import (
     create_session_with_retries,
     RateLimiter
 )
+from cache_utils import get_persistent_cache, generate_cache_key
 
 logger = get_logger(__name__)
 
@@ -53,6 +54,9 @@ open_library_session = create_session_with_retries(
     backoff_factor=0.5,
     status_forcelist=(429, 500, 502, 503, 504)
 )
+
+# Persistent cache for API responses (24 hour TTL)
+api_cache = get_persistent_cache()
 
 def test_api_connection(api_name: str) -> Dict[str, bool]:
     """
@@ -139,7 +143,7 @@ def fetch_book_metadata(title: str, author: str, isbn: Optional[str] = None) -> 
 @retry_with_backoff(config=RetryConfig(max_retries=2))
 def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Fetch metadata from Open Library API with retry logic and rate limiting.
+    Fetch metadata from Open Library API with retry logic, rate limiting, and caching.
 
     Args:
         title: Book title
@@ -149,6 +153,15 @@ def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None)
     Returns:
         Dictionary with book metadata or None if not found
     """
+    # Generate cache key
+    cache_key = f"open_library:{generate_cache_key(title, author, isbn or '')}"
+
+    # Check cache first
+    cached_result = api_cache.get(cache_key)
+    if cached_result is not None:
+        logger.debug(f"Returning cached Open Library result for: {title} by {author}")
+        return cached_result
+
     try:
         # Apply rate limiting
         OPEN_LIBRARY_RATE_LIMITER.wait_if_needed()
@@ -162,7 +175,10 @@ def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None)
             )
             if response.status_code == 200 and response.json():
                 logger.info(f"Found book in Open Library by ISBN: {isbn}")
-                return parse_open_library_response(response.json())
+                result = parse_open_library_response(response.json())
+                if result:
+                    api_cache.set(cache_key, result, ttl=86400)  # Cache for 24 hours
+                return result
 
         # Fall back to search by title and author
         query = f"title:{title} author:{author}"
@@ -177,7 +193,7 @@ def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None)
             data = response.json()
             if data.get('docs'):
                 logger.info(f"Found book in Open Library: {title} by {author}")
-                return {
+                result = {
                     'title': data['docs'][0].get('title'),
                     'author': data['docs'][0].get('author_name', [author])[0],
                     'year': data['docs'][0].get('first_publish_year'),
@@ -185,8 +201,12 @@ def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None)
                     'isbn': data['docs'][0].get('isbn', [isbn])[0] if isbn else None,
                     'cover_url': f"https://covers.openlibrary.org/b/id/{data['docs'][0].get('cover_i')}-L.jpg" if data['docs'][0].get('cover_i') else None
                 }
+                api_cache.set(cache_key, result, ttl=86400)  # Cache for 24 hours
+                return result
 
         logger.warning(f"Book not found in Open Library: {title} by {author}")
+        # Cache negative results for shorter time to allow retry
+        api_cache.set(cache_key, None, ttl=3600)  # Cache for 1 hour
         return None
 
     except requests.exceptions.RequestException as e:
@@ -199,7 +219,7 @@ def fetch_from_open_library(title: str, author: str, isbn: Optional[str] = None)
 @retry_with_backoff(config=RetryConfig(max_retries=2))
 def fetch_from_google_books(title: str, author: str, isbn: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
-    Fetch metadata from Google Books API with retry logic and rate limiting.
+    Fetch metadata from Google Books API with retry logic, rate limiting, and caching.
 
     Args:
         title: Book title
@@ -209,6 +229,15 @@ def fetch_from_google_books(title: str, author: str, isbn: Optional[str] = None)
     Returns:
         Dictionary with book metadata or None if not found
     """
+    # Generate cache key
+    cache_key = f"google_books:{generate_cache_key(title, author, isbn or '')}"
+
+    # Check cache first
+    cached_result = api_cache.get(cache_key)
+    if cached_result is not None:
+        logger.debug(f"Returning cached Google Books result for: {title} by {author}")
+        return cached_result
+
     try:
         # Apply rate limiting
         GOOGLE_BOOKS_RATE_LIMITER.wait_if_needed()
@@ -234,7 +263,7 @@ def fetch_from_google_books(title: str, author: str, isbn: Optional[str] = None)
             if data.get('items'):
                 volume_info = data['items'][0]['volumeInfo']
                 logger.info(f"Found book in Google Books: {title} by {author}")
-                return {
+                result = {
                     'title': volume_info.get('title'),
                     'author': volume_info.get('authors', [author])[0],
                     'year': volume_info.get('publishedDate', '')[:4],
@@ -245,8 +274,12 @@ def fetch_from_google_books(title: str, author: str, isbn: Optional[str] = None)
                     'page_count': volume_info.get('pageCount'),
                     'language': volume_info.get('language')
                 }
+                api_cache.set(cache_key, result, ttl=86400)  # Cache for 24 hours
+                return result
 
         logger.warning(f"Book not found in Google Books: {title} by {author}")
+        # Cache negative results for shorter time to allow retry
+        api_cache.set(cache_key, None, ttl=3600)  # Cache for 1 hour
         return None
 
     except requests.exceptions.RequestException as e:

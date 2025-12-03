@@ -90,6 +90,30 @@ class Database:
                     ''',
                     2: '''
                         ALTER TABLE books ADD COLUMN personal_notes TEXT;
+                    ''',
+                    3: '''
+                        -- Compound indexes for common query patterns
+
+                        -- For search queries that filter by title OR author
+                        CREATE INDEX IF NOT EXISTS idx_title_author ON books(title, author);
+
+                        -- For sorting by created_at DESC (recent books)
+                        CREATE INDEX IF NOT EXISTS idx_created_at_desc ON books(created_at DESC);
+
+                        -- For queries that need both title and created_at
+                        CREATE INDEX IF NOT EXISTS idx_title_created ON books(title, created_at DESC);
+
+                        -- For queries that need both author and created_at
+                        CREATE INDEX IF NOT EXISTS idx_author_created ON books(author, created_at DESC);
+
+                        -- For ISBN lookups (unique constraint would be better, but this helps)
+                        CREATE INDEX IF NOT EXISTS idx_isbn ON books(isbn) WHERE isbn IS NOT NULL;
+
+                        -- For metadata queries (filtering books with/without metadata)
+                        CREATE INDEX IF NOT EXISTS idx_has_metadata ON books((metadata IS NOT NULL));
+
+                        -- For combined year and author queries
+                        CREATE INDEX IF NOT EXISTS idx_author_year ON books(author, year) WHERE year IS NOT NULL;
                     '''
                 }
 
@@ -209,17 +233,13 @@ class Database:
             raise DatabaseError(f"Failed to retrieve book: {str(e)}")
 
     def search_books(self, search_term: str = "", sort_by: str = "title") -> List[Tuple]:
-        """Search books with optional filtering and sorting."""
+        """
+        Search books with optional filtering and sorting.
+        Uses optimized queries with compound indexes for better performance.
+        """
         try:
             with self.get_connection() as conn:
                 c = conn.cursor()
-
-                query = 'SELECT * FROM books'
-                params = []
-
-                if search_term:
-                    query += ' WHERE title LIKE ? OR author LIKE ?'
-                    params.extend([f'%{search_term}%', f'%{search_term}%'])
 
                 # Whitelist of allowed sort columns to prevent SQL injection
                 ALLOWED_SORT_COLUMNS = {
@@ -235,10 +255,27 @@ class Database:
                     logger.warning(f"Invalid sort_by value: {sort_by}. Defaulting to 'title'")
                     sort_column = "title"
 
+                # Build ORDER BY clause
                 if sort_column == "created_at":
-                    query += ' ORDER BY created_at DESC'
+                    order_clause = ' ORDER BY created_at DESC'
                 else:
-                    query += f' ORDER BY {sort_column}'
+                    order_clause = f' ORDER BY {sort_column}'
+
+                params = []
+
+                if search_term:
+                    # Use UNION instead of OR for better index usage
+                    # Each part of the UNION can use its own index
+                    query = f'''
+                        SELECT * FROM books WHERE title LIKE ?
+                        UNION
+                        SELECT * FROM books WHERE author LIKE ?
+                        {order_clause}
+                    '''
+                    params = [f'%{search_term}%', f'%{search_term}%']
+                else:
+                    # No search term - just sort all books
+                    query = f'SELECT * FROM books{order_clause}'
 
                 results = c.execute(query, params).fetchall()
                 logger.debug(f"Search returned {len(results)} books")

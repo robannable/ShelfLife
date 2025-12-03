@@ -1,10 +1,12 @@
 """
 Book service for handling LLM-enhanced metadata operations.
+Includes caching for LLM responses and parallel processing for performance.
 """
 import json
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import config
 from api_utils import fetch_book_metadata
@@ -12,6 +14,7 @@ from llm_client import LLMClientFactory, parse_json_from_response
 from models import BookMetadata
 from constants import STANDARD_GENRES, GENRE_PROMPT
 from logger import get_logger
+from cache_utils import get_memory_cache, generate_cache_key
 
 logger = get_logger(__name__)
 
@@ -94,6 +97,9 @@ Respond with a valid JSON object using this exact structure:
     }}
 }}"""
 
+# In-memory cache for LLM responses (1 hour TTL)
+llm_cache = get_memory_cache()
+
 
 class BookService:
     """Service for book metadata enhancement using LLM."""
@@ -136,6 +142,7 @@ class BookService:
     ) -> Optional[BookMetadata]:
         """
         Enhance book data with metadata from APIs and LLM analysis.
+        Uses caching to avoid redundant LLM calls.
 
         Args:
             title: Book title
@@ -149,6 +156,9 @@ class BookService:
         try:
             logger.info(f"Enhancing data for: {title} by {author}")
 
+            # Generate cache key for LLM response
+            cache_key = f"llm_enhance:{generate_cache_key(title, author, year or 0, isbn or '')}"
+
             # Step 1: Fetch basic metadata from Open Library and Google Books
             api_metadata = fetch_book_metadata(title, author, isbn)
 
@@ -159,7 +169,19 @@ class BookService:
                 except (ValueError, TypeError):
                     year = None
 
-            # Step 3: Build enhanced prompt with genre constraints
+            # Step 3: Check cache for LLM analysis
+            cached_llm_data = llm_cache.get(cache_key)
+
+            if cached_llm_data:
+                logger.debug(f"Using cached LLM analysis for: {title} by {author}")
+                # Merge cached LLM data with fresh API metadata
+                merged_data = {**api_metadata, **cached_llm_data}
+                sources = api_metadata.get('sources', [])
+                sources.append(f"LLM ({_get_config('LLM_PROVIDER', 'anthropic')}) - Cached")
+                merged_data['sources'] = sources
+                return BookMetadata.from_dict(merged_data)
+
+            # Step 4: Build enhanced prompt with genre constraints
             book_prompt = _get_config('BOOK_ANALYSIS_PROMPT', DEFAULT_BOOK_ANALYSIS_PROMPT).format(
                 title=title,
                 author=author,
@@ -172,7 +194,7 @@ class BookService:
 
             full_prompt = f"{book_prompt}\n\nFor genre classification:\n{genre_selection_prompt}"
 
-            # Step 4: Get LLM analysis
+            # Step 5: Get LLM analysis
             logger.debug("Requesting LLM analysis...")
             llm_response = self.llm_client.generate(full_prompt)
 
@@ -180,14 +202,17 @@ class BookService:
                 logger.warning("No response from LLM, returning API metadata only")
                 return BookMetadata.from_dict(api_metadata)
 
-            # Step 5: Parse LLM response
+            # Step 6: Parse LLM response
             llm_data = parse_json_from_response(llm_response)
 
             if not llm_data:
                 logger.warning("Failed to parse LLM response, returning API metadata only")
                 return BookMetadata.from_dict(api_metadata)
 
-            # Step 6: Merge all data sources
+            # Step 7: Cache LLM analysis
+            llm_cache.set(cache_key, llm_data, ttl=3600)  # Cache for 1 hour
+
+            # Step 8: Merge all data sources
             merged_data = {**api_metadata, **llm_data}
 
             # Add sources
@@ -292,8 +317,18 @@ class BookService:
             logger.error(f"Error analyzing theme chunk: {str(e)}", exc_info=True)
             return None
 
-    def _analyze_themes_chunked(self, themes: List[str], chunk_size: int) -> Dict[str, Any]:
-        """Analyze themes in multiple chunks and combine results."""
+    def _analyze_themes_chunked(self, themes: List[str], chunk_size: int, max_workers: int = 3) -> Dict[str, Any]:
+        """
+        Analyze themes in multiple chunks using parallel processing for better performance.
+
+        Args:
+            themes: List of themes to analyze
+            chunk_size: Size of each chunk
+            max_workers: Maximum number of parallel workers (default: 3 to avoid API rate limits)
+
+        Returns:
+            Combined analysis from all chunks
+        """
         combined_analysis = {
             "uber_themes": [],
             "analysis": {
@@ -305,23 +340,44 @@ class BookService:
         chunk_summaries = []
         chunk_insights = []
 
-        # Process themes in chunks
-        for i in range(0, len(themes), chunk_size):
-            chunk = themes[i:i + chunk_size]
-            logger.info(f"Processing theme chunk {i//chunk_size + 1} ({len(chunk)} themes)")
+        # Create theme chunks
+        theme_chunks = [themes[i:i + chunk_size] for i in range(0, len(themes), chunk_size)]
+        logger.info(f"Processing {len(theme_chunks)} theme chunks in parallel (max {max_workers} workers)")
 
-            chunk_analysis = self._analyze_theme_chunk(chunk)
+        # Process chunks in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all chunk analysis tasks
+            future_to_chunk = {
+                executor.submit(self._analyze_theme_chunk, chunk): idx
+                for idx, chunk in enumerate(theme_chunks)
+            }
 
-            if chunk_analysis:
-                # Collect uber-themes
-                combined_analysis["uber_themes"].extend(chunk_analysis.get("uber_themes", []))
+            # Collect results as they complete
+            for future in as_completed(future_to_chunk):
+                chunk_idx = future_to_chunk[future]
+                try:
+                    chunk_analysis = future.result()
 
-                # Collect summaries and insights
-                if "analysis" in chunk_analysis:
-                    if "summary" in chunk_analysis["analysis"]:
-                        chunk_summaries.append(chunk_analysis["analysis"]["summary"])
-                    if "key_insights" in chunk_analysis["analysis"]:
-                        chunk_insights.extend(chunk_analysis["analysis"]["key_insights"])
+                    if chunk_analysis:
+                        logger.debug(f"Completed chunk {chunk_idx + 1}/{len(theme_chunks)}")
+
+                        # Collect uber-themes
+                        combined_analysis["uber_themes"].extend(chunk_analysis.get("uber_themes", []))
+
+                        # Collect summaries and insights
+                        if "analysis" in chunk_analysis:
+                            if "summary" in chunk_analysis["analysis"]:
+                                chunk_summaries.append(chunk_analysis["analysis"]["summary"])
+                            if "key_insights" in chunk_analysis["analysis"]:
+                                chunk_insights.extend(chunk_analysis["analysis"]["key_insights"])
+                    else:
+                        logger.warning(f"Chunk {chunk_idx + 1} returned no analysis")
+
+                except Exception as e:
+                    logger.error(f"Error processing chunk {chunk_idx + 1}: {str(e)}", exc_info=True)
+                    # Continue with other chunks
+
+        logger.info(f"Completed parallel processing of {len(theme_chunks)} chunks")
 
         # Combine summaries
         if chunk_summaries:
