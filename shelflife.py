@@ -35,6 +35,11 @@ from validation import validate_book_input, validate_search_term, sanitize_strin
 ShelfLifeLogger().set_level(getattr(config, 'LOG_LEVEL', 'INFO'))
 logger = get_logger(__name__)
 
+# Config helper for backward compatibility
+def _get_config(attr: str, default):
+    """Get config attribute with fallback default."""
+    return getattr(config, attr, default)
+
 # Custom color palette for charts
 CHART_COLORS = [
     '#6366F1',  # Primary indigo
@@ -75,7 +80,7 @@ CONDITION_BADGES = {
 def get_database():
     """Get or create database instance."""
     try:
-        return Database(config.DB_PATH)
+        return Database(_get_config('DB_PATH', 'data/database.db'))
     except Exception as e:
         logger.error(f"Failed to initialize database: {str(e)}", exc_info=True)
         st.error(f"Database initialization failed: {str(e)}")
@@ -168,8 +173,9 @@ def process_image(uploaded_file):
         image_format = format_map.get(file_extension, 'JPEG')
 
         # Resize if too large
-        if max(image.size) > config.MAX_IMAGE_SIZE:
-            ratio = config.MAX_IMAGE_SIZE / max(image.size)
+        max_size = _get_config('MAX_IMAGE_SIZE', 800)
+        if max(image.size) > max_size:
+            ratio = max_size / max(image.size)
             new_size = tuple(int(dim * ratio) for dim in image.size)
             image = image.resize(new_size, Image.LANCZOS)
 
@@ -371,7 +377,7 @@ def main():
             with st.spinner("Checking connections..."):
                 # Check LLM
                 llm_status = book_service.test_connection()
-                st.write(f"{config.LLM_PROVIDER.title()} LLM:",
+                st.write(f"{_get_config('LLM_PROVIDER', 'anthropic').title()} LLM:",
                         "✅" if llm_status["success"] else "❌")
 
                 # Check Google Books API
@@ -384,7 +390,7 @@ def main():
                 st.write("Open Library API:",
                         "✅" if ol_status["success"] else "❌")
 
-                if config.DEBUG_MODE:
+                if _get_config('DEBUG_MODE', False):
                     if not llm_status["success"]:
                         st.error(f"LLM Error: {llm_status.get('error', 'Unknown')}")
                     if not google_status["success"]:
