@@ -64,24 +64,62 @@ setup() {
         if [ -f "config.template.py" ]; then
             echo "Creating config.py from template..."
             cp config.template.py config.py
-            echo "Please edit config.py with your API keys and settings!"
+            echo "✓ config.py created"
+        else
+            echo "⚠️  Warning: config.template.py not found!"
         fi
+    else
+        echo "✓ config.py already exists"
     fi
 
     # Create .env from example if it doesn't exist
+    CONFIG_NEEDED=false
     if [ ! -f ".env" ]; then
         if [ -f ".env.example" ]; then
             echo "Creating .env from example..."
             cp .env.example .env
-            echo "Please edit .env with your API keys!"
+            echo "✓ .env created"
+            CONFIG_NEEDED=true
+        else
+            echo "⚠️  Warning: .env.example not found!"
+        fi
+    else
+        echo "✓ .env already exists"
+        # Check if API key is still placeholder
+        if grep -q "PASTE_YOUR_ACTUAL_API_KEY_HERE" .env 2>/dev/null || \
+           grep -q "your_anthropic_api_key_here" .env 2>/dev/null; then
+            CONFIG_NEEDED=true
         fi
     fi
 
     echo ""
-    echo "Setup complete!"
-    echo "Virtual environment is activated."
-    echo "Don't forget to configure your API keys in .env file!"
-    sleep 2
+    echo "================================"
+    echo "   Setup Complete!"
+    echo "================================"
+
+    if [ "$CONFIG_NEEDED" = true ]; then
+        echo ""
+        echo "⚠️  IMPORTANT: Configure your API keys!"
+        echo ""
+        echo "Edit the .env file and add your Anthropic API key:"
+        echo "  nano .env"
+        echo ""
+        echo "Replace this line:"
+        echo "  ANTHROPIC_API_KEY=PASTE_YOUR_ACTUAL_API_KEY_HERE"
+        echo ""
+        echo "With your actual key:"
+        echo "  ANTHROPIC_API_KEY=sk-ant-api03-xxxxx..."
+        echo ""
+        echo "Get your API key at: https://console.anthropic.com/"
+        echo ""
+        read -p "Press Enter once you've configured your API key..."
+    else
+        echo "✓ Virtual environment is activated"
+        echo "✓ Dependencies installed"
+        echo "✓ Configuration files ready"
+        sleep 2
+    fi
+
     menu
 }
 
@@ -94,16 +132,55 @@ run() {
 
     # Check if config.py exists
     if [ ! -f "config.py" ]; then
-        echo "Warning: config.py not found!"
+        echo "⚠️  Error: config.py not found!"
         echo "Please run option 1 (Install Dependencies) first."
         sleep 2
         menu
         return
     fi
 
+    # Check if .env exists
+    if [ ! -f ".env" ]; then
+        echo "⚠️  Error: .env file not found!"
+        echo "Please run option 1 (Install Dependencies) first."
+        sleep 2
+        menu
+        return
+    fi
+
+    # Check if API key is configured
+    if grep -q "PASTE_YOUR_ACTUAL_API_KEY_HERE" .env 2>/dev/null || \
+       grep -q "your_anthropic_api_key_here" .env 2>/dev/null; then
+        echo ""
+        echo "⚠️  API Key Not Configured!"
+        echo ""
+        echo "You need to add your Anthropic API key to the .env file."
+        echo ""
+        echo "Edit .env file:"
+        echo "  nano .env"
+        echo ""
+        echo "Replace:"
+        echo "  ANTHROPIC_API_KEY=PASTE_YOUR_ACTUAL_API_KEY_HERE"
+        echo ""
+        echo "With your actual key:"
+        echo "  ANTHROPIC_API_KEY=sk-ant-api03-xxxxx..."
+        echo ""
+        echo "Get your API key at: https://console.anthropic.com/"
+        echo ""
+        read -p "Press Enter to return to menu..."
+        menu
+        return
+    fi
+
     # Run the Streamlit application
-    echo "Starting ShelfLife..."
+    echo ""
+    echo "================================"
+    echo "   Starting ShelfLife..."
+    echo "================================"
+    echo ""
     streamlit run shelflife.py
+
+    echo ""
     read -p "Press Enter to continue..."
     menu
 }

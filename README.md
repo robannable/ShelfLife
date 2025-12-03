@@ -100,9 +100,28 @@ pip install -r requirements.txt
 
 **⚠️ IMPORTANT: Never commit API keys to version control!**
 
-Create a `.env` file from the example:
+**Quick Setup (Automated):**
+
+Use the interactive setup script:
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+The script will:
+- ✅ Create virtual environment
+- ✅ Install all dependencies (including python-dotenv)
+- ✅ Create `.env` from `.env.example`
+- ✅ Create `config.py` from `config.template.py`
+- ✅ Validate API key configuration before running
+- ✅ Provide clear instructions for adding your API key
+
+**Manual Setup:**
+
+Create configuration files from templates:
 ```bash
 cp .env.example .env
+cp config.template.py config.py
 ```
 
 Edit `.env` with your actual values:
@@ -122,6 +141,7 @@ GOOGLE_BOOKS_API_KEY=your-google-books-api-key
 - ✅ `.env` is already in `.gitignore` and won't be committed
 - ✅ Never share your `.env` file or commit it to version control
 - ✅ Configuration is automatically validated on startup
+- ✅ `config.py` also in `.gitignore` for additional security
 
 #### Option A: Anthropic Claude (Recommended)
 
