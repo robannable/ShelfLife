@@ -78,7 +78,7 @@ self.llm_client = LLMClientFactory.create_client(
 
 ### Data Flow
 
-1. **User Input** → `shelflife.py` (UI layer)
+1. **User Input** → `shelflife_app/views/*.py` (UI layer, one script per page)
 2. **Input Validation** → `validation.py` (sanitization, XSS prevention)
 3. **Book Enhancement** → `book_service.py` → `api_utils.py` + `llm_client.py`
 4. **Data Storage** → `database.py` (with context managers)
@@ -86,7 +86,16 @@ self.llm_client = LLMClientFactory.create_client(
 
 ### Module Responsibilities
 
-- **shelflife.py**: Streamlit UI, page routing, user interactions (33K lines → now focused on UI)
+**Entry & UI package**
+- **shelflife.py**: Thin entry point. Configures `st.set_page_config`, loads CSS, mounts `st.navigation` with the six page scripts, and renders the sidebar extras.
+- **shelflife_app/services.py**: `get_database()` and `get_book_service()` singletons (via `@st.cache_resource`) plus `_get_config()` helper.
+- **shelflife_app/ui_helpers.py**: Shared UI primitives (`render_page_header`, `render_empty_state`, `render_condition_badge`, `render_tags`) and visual constants (`CHART_COLORS`, `CONDITION_BADGES`).
+- **shelflife_app/image_utils.py**: `process_image()` for cover uploads.
+- **shelflife_app/library_utils.py**: Library-wide helpers (`generate_library_json`, `find_related_books`, `display_theme_analysis`).
+- **shelflife_app/sidebar.py**: `render_sidebar_extras()` — logo, API status check, library stats.
+- **shelflife_app/views/**: One script per navigable page (`add_book.py`, `view_collection.py`, `analytics.py`, `network_view.py`, `executive_summary.py`, `ask_library.py`). Each script is executed by `st.navigation` and uses top-level Streamlit calls (no `def main()` wrapper).
+
+**Backend**
 - **database.py**: All SQLite operations, schema versioning, backup/restore utilities
 - **book_service.py**: Book metadata enhancement orchestration, calls APIs and LLM
 - **llm_client.py**: LLM provider abstraction (AnthropicClient, OllamaClient)
@@ -98,6 +107,14 @@ self.llm_client = LLMClientFactory.create_client(
 - **logger.py**: Centralized logging with daily rotation
 - **constants.py**: Genre lists, prompts, configuration constants
 - **config.template.py**: Configuration template (copy to config.py)
+
+### Page Navigation
+
+The app uses Streamlit's modern multipage pattern (`st.Page` + `st.navigation`, requires Streamlit ≥ 1.36). Navigation lives in the sidebar and is constructed in `shelflife.py:main()`. To switch pages programmatically from a view, call `st.switch_page("shelflife_app/views/<name>.py")`.
+
+To add a new page:
+1. Create `shelflife_app/views/new_page.py` with top-level Streamlit code (no function wrapper). Use `get_database()` / `get_book_service()` from `shelflife_app.services` for singletons.
+2. Append an `st.Page(...)` entry to the `pages` list in `shelflife.py`.
 
 ### Database Schema
 
@@ -184,7 +201,7 @@ schema_updates = {
 }
 ```
 
-3. Update UI in `shelflife.py` to collect/display the field
+3. Update the relevant view script in `shelflife_app/views/` (typically `add_book.py` and `view_collection.py`) to collect/display the field
 
 ### Adding a New LLM Provider
 
@@ -213,7 +230,7 @@ def new_analysis(books_data: List[Tuple]) -> pd.DataFrame:
     return results_df
 ```
 
-2. Call from UI in `shelflife.py`:
+2. Call from the appropriate view script (e.g. `shelflife_app/views/analytics.py`):
 ```python
 results = new_analysis(books)
 st.plotly_chart(create_visualization(results))
@@ -233,7 +250,7 @@ data = parse_json_from_response(response)
 
 ### Image Processing
 
-Images are stored as BLOBs in the database. Use `process_image()` in `shelflife.py`:
+Images are stored as BLOBs in the database. Use `process_image()` from `shelflife_app.image_utils`:
 - Automatically resizes to MAX_IMAGE_SIZE (800px)
 - Converts to appropriate format (JPEG, PNG, etc.)
 - Returns bytes for database storage
