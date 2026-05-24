@@ -3,7 +3,7 @@ Book service for handling LLM-enhanced metadata operations.
 Includes caching for LLM responses and parallel processing for performance.
 """
 import json
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, Iterator, List
 from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -406,6 +406,17 @@ Provide a concise synthesis without citations or references. Focus on the relati
         logger.info(f"Combined analysis from {len(chunk_summaries)} chunks")
         return combined_analysis
 
+    _ASK_LIBRARY_SYSTEM_PROMPT = """You are a knowledgeable librarian assistant. Use the provided library catalog to answer queries.
+If the query cannot be answered using only the library information, clearly state that."""
+
+    def _build_ask_library_prompt(self, query: str, library_catalog: Dict[str, Any]) -> str:
+        return f"""Library Catalog:
+{json.dumps(library_catalog['library'], indent=2)}
+
+Query: {query}
+
+Please provide a clear, concise response based on the available library data."""
+
     def ask_library_question(self, query: str, library_catalog: Dict[str, Any]) -> Optional[str]:
         """
         Ask a question about the library collection.
@@ -419,18 +430,10 @@ Provide a concise synthesis without citations or references. Focus on the relati
         """
         try:
             logger.info(f"Processing library query: {query[:50]}...")
-
-            system_prompt = """You are a knowledgeable librarian assistant. Use the provided library catalog to answer queries.
-If the query cannot be answered using only the library information, clearly state that."""
-
-            prompt = f"""Library Catalog:
-{json.dumps(library_catalog['library'], indent=2)}
-
-Query: {query}
-
-Please provide a clear, concise response based on the available library data."""
-
-            response = self.llm_client.generate(prompt, system_prompt=system_prompt)
+            response = self.llm_client.generate(
+                self._build_ask_library_prompt(query, library_catalog),
+                system_prompt=self._ASK_LIBRARY_SYSTEM_PROMPT,
+            )
 
             if response:
                 logger.info("Library query answered successfully")
@@ -442,6 +445,14 @@ Please provide a clear, concise response based on the available library data."""
         except Exception as e:
             logger.error(f"Error processing library query: {str(e)}", exc_info=True)
             return None
+
+    def ask_library_question_stream(self, query: str, library_catalog: Dict[str, Any]) -> Iterator[str]:
+        """Stream a response to a library question. Yields text chunks as they arrive."""
+        logger.info(f"Streaming library query: {query[:50]}...")
+        yield from self.llm_client.generate_stream(
+            self._build_ask_library_prompt(query, library_catalog),
+            system_prompt=self._ASK_LIBRARY_SYSTEM_PROMPT,
+        )
 
     def test_connection(self) -> Dict[str, Any]:
         """Test the LLM connection."""
