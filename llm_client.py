@@ -3,7 +3,7 @@ LLM client abstraction supporting Anthropic and Ollama.
 """
 import json
 import re
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, Iterator, List
 from abc import ABC, abstractmethod
 import requests
 from logger import get_logger
@@ -29,6 +29,11 @@ class LLMClient(ABC):
     @abstractmethod
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> Optional[str]:
         """Generate a response from the LLM."""
+        pass
+
+    @abstractmethod
+    def generate_stream(self, prompt: str, system_prompt: Optional[str] = None) -> Iterator[str]:
+        """Generate a response from the LLM as a stream of text chunks."""
         pass
 
     @abstractmethod
@@ -134,6 +139,61 @@ class AnthropicClient(LLMClient):
         except Exception as e:
             logger.error(f"Unexpected error calling Anthropic API: {str(e)}", exc_info=True)
             return None
+
+    def generate_stream(self, prompt: str, system_prompt: Optional[str] = None, max_tokens: int = 4096) -> Iterator[str]:
+        """Stream a response from Claude.
+
+        Yields text deltas as they arrive. Yields nothing on error (and logs).
+        Rate limiting is applied before the request; retry is handled by the
+        underlying session adapter rather than the per-call retry decorator,
+        since mid-stream failures can't be transparently retried.
+        """
+        ANTHROPIC_RATE_LIMITER.wait_if_needed()
+
+        payload = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+
+        try:
+            logger.debug(f"Opening streaming request to Anthropic API with model {self.model}")
+            response = self.session.post(
+                self.api_url,
+                headers=self.headers,
+                json=payload,
+                timeout=60,
+                stream=True,
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Anthropic streaming API error: {response.status_code} - {response.text[:500]}")
+                return
+
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line or not raw_line.startswith("data:"):
+                    continue
+                data = raw_line[len("data:"):].strip()
+                if not data:
+                    continue
+                try:
+                    event = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("type") == "content_block_delta":
+                    delta = event.get("delta", {})
+                    if delta.get("type") == "text_delta":
+                        text = delta.get("text", "")
+                        if text:
+                            yield text
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Anthropic streaming request failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error in Anthropic stream: {str(e)}", exc_info=True)
 
     def test_connection(self) -> Dict[str, Any]:
         """Test connection to Anthropic API."""
@@ -242,6 +302,56 @@ class OllamaClient(LLMClient):
         except Exception as e:
             logger.error(f"Unexpected error calling Ollama API: {str(e)}", exc_info=True)
             return None
+
+    def generate_stream(self, prompt: str, system_prompt: Optional[str] = None) -> Iterator[str]:
+        """Stream a response from Ollama (newline-delimited JSON).
+
+        Yields text chunks as they arrive. Yields nothing on error (and logs).
+        """
+        OLLAMA_RATE_LIMITER.wait_if_needed()
+
+        full_prompt = prompt
+        if system_prompt:
+            full_prompt = f"{system_prompt}\n\n{prompt}"
+
+        payload = {
+            "model": self.model,
+            "prompt": full_prompt,
+            "stream": True,
+        }
+
+        try:
+            logger.debug(f"Opening streaming request to Ollama API with model {self.model}")
+            response = self.session.post(
+                self.api_url,
+                json=payload,
+                timeout=120,
+                stream=True,
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Ollama streaming API error: {response.status_code} - {response.text[:500]}")
+                return
+
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                try:
+                    chunk = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                text = chunk.get("response", "")
+                if text:
+                    yield text
+                if chunk.get("done"):
+                    break
+
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Cannot connect to Ollama at {self.base_url}: {str(e)}")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ollama streaming request failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error in Ollama stream: {str(e)}", exc_info=True)
 
     def test_connection(self) -> Dict[str, Any]:
         """Test connection to Ollama API."""

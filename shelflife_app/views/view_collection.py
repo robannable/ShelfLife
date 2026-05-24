@@ -202,26 +202,23 @@ try:
             with col5:
                 if st.button("🔄 Refresh Metadata", key=f"refresh_{book[0]}", use_container_width=True):
                     try:
-                        progress = st.progress(0, text="Refreshing metadata...")
-                        progress.progress(30, text="Fetching latest data...")
+                        with st.status("Refreshing metadata...", expanded=False) as status:
+                            status.update(label="Fetching latest data from AI...")
+                            enhanced_metadata = book_service.enhance_book_data(
+                                book[1], book[2], book[3], book[4]
+                            )
 
-                        enhanced_metadata = book_service.enhance_book_data(
-                            book[1], book[2], book[3], book[4]
-                        )
+                            if not enhanced_metadata:
+                                status.update(label="Failed to refresh metadata.", state="error")
+                                st.error("Failed to refresh metadata")
+                                st.stop()
 
-                        progress.progress(70, text="Updating database...")
-
-                        if enhanced_metadata:
+                            status.update(label="Updating database...")
                             db.update_metadata(book[0], enhanced_metadata)
-                            progress.progress(100, text="Complete!")
-                            time.sleep(0.3)
-                            progress.empty()
-                            st.success("Metadata refreshed successfully!")
-                            time.sleep(0.5)
-                            st.rerun()
-                        else:
-                            progress.empty()
-                            st.error("Failed to refresh metadata")
+                            status.update(label="Metadata refreshed.", state="complete")
+
+                        time.sleep(0.5)
+                        st.rerun()
                     except Exception as e:
                         logger.error(f"Error refreshing metadata: {str(e)}", exc_info=True)
                         st.error("Failed to refresh metadata")

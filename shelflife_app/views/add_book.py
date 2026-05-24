@@ -1,5 +1,4 @@
 """Add Book page: form-driven book entry with AI metadata enhancement."""
-import time
 from datetime import datetime
 
 import streamlit as st
@@ -110,39 +109,34 @@ with col1:
                 if publisher:
                     publisher = sanitize_string(publisher, 200)
 
-                progress_bar = st.progress(0, text="Enhancing book metadata with AI...")
-                progress_bar.progress(20, text="Searching book databases...")
-                progress_bar.progress(40, text="Analyzing with AI...")
+                with st.status("Enhancing book metadata with AI...", expanded=False) as status:
+                    status.update(label="Analyzing with AI...")
+                    enhanced_metadata = book_service.enhance_book_data(title, author, year, isbn)
 
-                enhanced_metadata = book_service.enhance_book_data(title, author, year, isbn)
+                    if not enhanced_metadata:
+                        status.update(label="Failed to fetch book information.", state="error")
+                        st.error("Failed to fetch book information. Please try again.")
+                        st.stop()
 
-                progress_bar.progress(70, text="Processing cover image...")
-
-                if enhanced_metadata:
+                    status.update(label="Processing cover image...")
                     image_data = process_image(cover_image) if cover_image else None
 
-                    progress_bar.progress(85, text="Saving to database...")
-
+                    status.update(label="Saving to database...")
                     book = Book(
                         title=title, author=author, year=year, isbn=isbn,
                         publisher=publisher, condition=condition,
                         cover_image=image_data, metadata=enhanced_metadata,
                         personal_notes=personal_notes
                     )
-
                     book_id = db.add_book(book)
-                    progress_bar.progress(100, text="Complete!")
-                    time.sleep(0.5)
-                    progress_bar.empty()
 
-                    st.session_state.show_success = (
-                        f"'{title}' by {author} has been added to your library! (ID: {book_id})"
-                    )
-                    logger.info(f"Added book: {title} by {author} (ID: {book_id})")
-                    st.rerun()
-                else:
-                    progress_bar.empty()
-                    st.error("Failed to fetch book information. Please try again.")
+                    status.update(label=f"Added '{title}' by {author}.", state="complete")
+
+                st.session_state.show_success = (
+                    f"'{title}' by {author} has been added to your library! (ID: {book_id})"
+                )
+                logger.info(f"Added book: {title} by {author} (ID: {book_id})")
+                st.rerun()
 
             except ValueError as e:
                 st.error(f"Validation error: {str(e)}")

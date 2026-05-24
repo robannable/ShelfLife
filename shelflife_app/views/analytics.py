@@ -1,6 +1,5 @@
 """Analytics page: charts and AI-assisted theme analysis."""
 import json
-import time
 
 import plotly.express as px
 import streamlit as st
@@ -147,15 +146,9 @@ try:
     with col1:
         if st.button("🎯 Extract Themes", use_container_width=True):
             try:
-                progress = st.progress(0, text="Extracting themes...")
-                progress.progress(30, text="Analyzing book metadata...")
-
-                books_with_meta = db.get_books_with_metadata()
-                theme_data = extract_and_save_themes(books_with_meta)
-
-                progress.progress(100, text="Complete!")
-                time.sleep(0.3)
-                progress.empty()
+                with st.spinner("Analyzing book metadata..."):
+                    books_with_meta = db.get_books_with_metadata()
+                    theme_data = extract_and_save_themes(books_with_meta)
 
                 st.success(f"Extracted {len(theme_data['themes'])} unique themes!")
 
@@ -177,23 +170,20 @@ try:
                 with open("data/theme_inventory.json", "r") as f:
                     theme_data = json.load(f)
 
-                progress = st.progress(0, text="Analyzing theme relationships...")
-                progress.progress(50, text="AI is identifying patterns...")
+                with st.status("AI is identifying patterns...", expanded=False) as status:
+                    theme_analysis = book_service.analyze_themes(theme_data['themes'])
 
-                theme_analysis = book_service.analyze_themes(theme_data['themes'])
+                    if not theme_analysis:
+                        status.update(label="Failed to analyze themes.", state="error")
+                        st.error("Failed to analyze themes")
+                        st.stop()
 
-                if theme_analysis:
-                    progress.progress(90, text="Saving analysis...")
+                    status.update(label="Saving analysis...")
                     with open("data/theme_analysis.json", "w") as f:
                         json.dump(theme_analysis, f, indent=2)
-                    progress.progress(100, text="Complete!")
-                    time.sleep(0.3)
-                    progress.empty()
-                    st.success("Theme analysis complete!")
-                    st.rerun()
-                else:
-                    progress.empty()
-                    st.error("Failed to analyze themes")
+                    status.update(label="Theme analysis complete.", state="complete")
+
+                st.rerun()
             except FileNotFoundError:
                 st.error("Please extract themes first")
             except Exception as e:

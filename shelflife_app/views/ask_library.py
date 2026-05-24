@@ -1,6 +1,5 @@
-"""Ask the Library page: single-shot Q&A over the library catalog."""
+"""Ask the Library page: single-shot Q&A over the library catalog (streaming)."""
 import json
-import time
 
 import streamlit as st
 
@@ -56,27 +55,15 @@ if ask_button:
                 library_data = json.load(f)
         except FileNotFoundError:
             st.warning("Library catalog not found. Generating it now...")
-            json_path, library_data = generate_library_json(db)
+            _, library_data = generate_library_json(db)
             st.success("Catalog generated!")
 
-        progress = st.progress(0, text="Thinking...")
-        progress.progress(30, text="Analyzing your question...")
-        progress.progress(60, text="Searching your library...")
+        st.markdown("### Response")
+        full_response = st.write_stream(
+            book_service.ask_library_question_stream(query, library_data)
+        )
 
-        response = book_service.ask_library_question(query, library_data)
-
-        progress.progress(100, text="Complete!")
-        time.sleep(0.3)
-        progress.empty()
-
-        if response:
-            st.markdown("### Response")
-            st.markdown(f'''
-                <div style="background: linear-gradient(135deg, #EEF2FF 0%, #F3F4F6 100%); border-radius: 12px; padding: 1.5rem; border-left: 4px solid #6366F1;">
-                    {response}
-                </div>
-            ''', unsafe_allow_html=True)
-        else:
+        if not full_response:
             st.error("Failed to get a response. Please try again.")
 
     except Exception as e:

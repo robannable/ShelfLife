@@ -1,6 +1,4 @@
 """Reusable Streamlit UI components and visual constants."""
-import time
-
 import streamlit as st
 
 
@@ -68,17 +66,3 @@ def render_tags(items: list, tag_class: str = "tag") -> str:
     if not items:
         return ""
     return " ".join([f'<span class="{tag_class}">{item}</span>' for item in items])
-
-
-def simulate_progress(message: str, duration: float = 2.0):
-    """Show a progress bar that simulates work being done.
-
-    Kept for legacy callers; prefer real streaming progress via st.status / st.write_stream
-    once the underlying service exposes incremental output.
-    """
-    progress_bar = st.progress(0, text=message)
-    steps = 20
-    for i in range(steps):
-        time.sleep(duration / steps)
-        progress_bar.progress((i + 1) / steps, text=message)
-    progress_bar.empty()

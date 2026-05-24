@@ -1,6 +1,5 @@
 """Executive Summary page: catalog export + AI-generated library overview."""
 import json
-import time
 from datetime import datetime
 
 import streamlit as st
@@ -67,14 +66,8 @@ with col1:
 
     if st.button("Generate Catalog", use_container_width=True):
         try:
-            progress = st.progress(0, text="Generating catalog...")
-            progress.progress(50, text="Compiling book data...")
-
-            json_path, library_data = generate_library_json(db)
-
-            progress.progress(100, text="Complete!")
-            time.sleep(0.3)
-            progress.empty()
+            with st.spinner("Compiling book data..."):
+                json_path, library_data = generate_library_json(db)
 
             st.success(f"Catalog generated with {len(library_data['library'])} books!")
 
@@ -103,14 +96,15 @@ with col2:
             with open("data/library_catalog.json", "r") as f:
                 library_data = json.load(f)
 
-            progress = st.progress(0, text="Analyzing library...")
-            progress.progress(30, text="AI is reviewing your collection...")
+            with st.status("AI is reviewing your collection...", expanded=False) as status:
+                summary = book_service.generate_executive_summary(library_data)
 
-            summary = book_service.generate_executive_summary(library_data)
+                if not summary:
+                    status.update(label="Failed to generate summary.", state="error")
+                    st.error("Failed to generate summary")
+                    st.stop()
 
-            progress.progress(80, text="Compiling insights...")
-
-            if summary:
+                status.update(label="Saving insights...")
                 summary_info = {
                     "last_updated": datetime.now().isoformat(),
                     "summary": summary
@@ -118,14 +112,9 @@ with col2:
                 with open("data/executive_summary.json", "w") as f:
                     json.dump(summary_info, f, indent=2)
 
-                progress.progress(100, text="Complete!")
-                time.sleep(0.3)
-                progress.empty()
-                st.success("Summary generated!")
-                st.rerun()
-            else:
-                progress.empty()
-                st.error("Failed to generate summary")
+                status.update(label="Summary generated.", state="complete")
+
+            st.rerun()
         except FileNotFoundError:
             st.error("Please generate library catalog first")
         except Exception as e:
